@@ -6,9 +6,10 @@
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
-    "lint": "eslint app components lib prisma tests --max-warnings=0",
+    "lint": "eslint app components lib prisma tests e2e --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "db:reset": "prisma migrate reset --force",
     "postinstall": "prisma generate"
   },
