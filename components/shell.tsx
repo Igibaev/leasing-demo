@@ -13,18 +13,18 @@ export async function Shell({ children, currentPath }: { children: React.ReactNo
   let notifications: { id: string; subject: string; body: string; createdAt: Date }[] = [];
   let users: { id: string; name: string; roleCode: string; roleName: string }[] = [];
   let systemDate = new Date();
+  const [notifs, allUsers, config] = await Promise.all([
+    session ? prisma.notification.findMany({ where: { userId: session.id, readAt: null }, orderBy: { createdAt: "desc" }, take: 5 }) : Promise.resolve([]),
+    prisma.user.findMany({ select: { id: true, name: true, roleCode: true, role: { select: { name: true } } }, orderBy: { roleCode: "asc" } }),
+    prisma.config.findUnique({ where: { id: "system" } }),
+  ]);
+  notifications = notifs;
+  users = allUsers.map((u) => ({ id: u.id, name: u.name, roleCode: u.roleCode, roleName: u.role.name }));
+  if (config?.systemDate) systemDate = new Date(config.systemDate);
   if (session) {
     const role = getRole(session.roleCode);
     roleName = role.name;
     menu = menuFor(session.roleCode);
-    const [notifs, allUsers, config] = await Promise.all([
-      prisma.notification.findMany({ where: { userId: session.id, readAt: null }, orderBy: { createdAt: "desc" }, take: 5 }),
-      prisma.user.findMany({ select: { id: true, name: true, roleCode: true, role: { select: { name: true } } }, orderBy: { roleCode: "asc" } }),
-      prisma.config.findUnique({ where: { id: "system" } }),
-    ]);
-    notifications = notifs;
-    users = allUsers.map((u) => ({ id: u.id, name: u.name, roleCode: u.roleCode, roleName: u.role.name }));
-    if (config?.systemDate) systemDate = new Date(config.systemDate);
   }
 
   const simulated = Math.abs(new Date().getTime() - systemDate.getTime()) > 3600000;
@@ -78,7 +78,7 @@ export async function Shell({ children, currentPath }: { children: React.ReactNo
                 ))}
               </div>
             </details>
-            {session && users.length ? <RoleSwitcher users={users} currentUserId={session.id} currentRole={session.roleCode} /> : null}
+            {users.length ? <RoleSwitcher users={users} currentUserId={session?.id ?? ""} currentRole={session?.roleCode ?? ""} /> : null}
           </div>
         </div>
         <div className="flex items-center gap-1 overflow-x-auto bg-slate-100 px-4 text-xs">

@@ -11,6 +11,7 @@ export function RoleSwitcher({ users, currentUserId, currentRole }: { users: { i
     <form action={formAction} className="flex items-center gap-2">
       <select
         name="userId"
+        required
         onChange={(event) => {
           const selected = users.find((u) => u.id === event.currentTarget.value);
           const hidden = document.createElement("input");
@@ -20,16 +21,17 @@ export function RoleSwitcher({ users, currentUserId, currentRole }: { users: { i
           event.currentTarget.form?.appendChild(hidden);
           event.currentTarget.form?.requestSubmit();
         }}
-        defaultValue={currentUserId}
+        defaultValue={currentUserId || ""}
         className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
+        {!currentUserId ? <option value="">— выберите роль —</option> : null}
         {users.map((user) => (
           <option key={user.id} value={user.id}>
             {user.name} — {user.roleName}
           </option>
         ))}
       </select>
-      <input type="hidden" name="roleCode" value={currentRole} />
+      <input type="hidden" name="roleCode" value={currentRole} disabled={!currentRole} />
       {pending ? <span className="text-xs text-slate-400">меняю...</span> : null}
       {state && "error" in state && state.error ? <span className="text-xs text-red-600">{state.error}</span> : null}
     </form>

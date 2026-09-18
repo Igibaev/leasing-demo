@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import type { RoleInfo } from "./roles";
 import { getRole } from "./roles";
 
@@ -22,7 +23,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
 export async function requireUser(): Promise<SessionUser> {
   const user = await getSessionUser();
-  if (!user) throw new Error("Не авторизован. Выберите пользователя в шапке.");
+  if (!user) redirect("/");
   const full = await import("./prisma").then(({ prisma }) => prisma.user.findUnique({ where: { id: user.id } }));
   if (full) {
     user.name = full.name;
