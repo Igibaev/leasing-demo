@@ -1,0 +1,252 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Role {
+  id          String @id @default(cuid())
+  roleCode    String @unique
+  name        String
+  permissions String @default("{}")
+  users       User[]
+}
+
+model User {
+  id                String          @id @default(cuid())
+  email             String          @unique
+  name              String
+  roleCode          String
+  role              Role            @relation(fields: [roleCode], references: [roleCode])
+  createdAt         DateTime        @default(now())
+  applications      Application[]
+  auditLogs         AuditLog[]
+  workflowDecisions WorkflowStep[]
+  votes             CommitteeVote[]
+  notifications     Notification[]
+}
+
+model Client {
+  id               String        @id @default(cuid())
+  clientType       String
+  binIin           String        @unique
+  name             String
+  registrationDate String
+  oked             String
+  status           String        @default("ACTIVE")
+  address          String
+  phone            String
+  email            String
+  bankRequisites   String        @default("{}")
+  groupId          String?
+  ewsColor         String        @default("GREEN")
+  ewsReason        String?
+  riskRating       String?
+  financeJson      String        @default("{}")
+  createdAt        DateTime      @default(now())
+  applications     Application[]
+  contracts        Contract[]
+}
+
+model Supplier {
+  id            String @id @default(cuid())
+  name          String
+  bin           String @unique
+  city          String
+  type          String
+  contractCount Int    @default(0)
+}
+
+model Application {
+  id             String                     @id @default(cuid())
+  number         String                     @unique
+  clientId       String
+  client         Client                     @relation(fields: [clientId], references: [id])
+  product        String
+  assetCost      String
+  downPayment    String
+  financedAmount String
+  termMonths     Int
+  annualRate     String
+  scheduleType   String
+  riskScore      Int                        @default(0)
+  riskRating     String                     @default("C")
+  stopFlags      String                     @default("[]")
+  status         String                     @default("DRAFT")
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  createdById    String
+  createdBy      User                       @relation(fields: [createdById], references: [id])
+  statusHistory  ApplicationStatusHistory[]
+  workflowSteps  WorkflowStep[]
+  scheduleJson   String?
+  contract       Contract?
+}
+
+model ApplicationStatusHistory {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id])
+  fromStatus    String
+  toStatus      String
+  at            DateTime    @default(now())
+  userId        String
+  comment       String?
+}
+
+model WorkflowStep {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id])
+  seq           Int
+  name          String
+  roleCode      String
+  slaHours      Int
+  deadline      DateTime
+  status        String      @default("PENDING")
+  decision      String?
+  comment       String?
+  decidedById   String?
+  decidedBy     User?       @relation(fields: [decidedById], references: [id])
+  decidedAt     DateTime?
+}
+
+model Contract {
+  id               String            @id @default(cuid())
+  number           String            @unique
+  applicationId    String            @unique
+  application      Application       @relation(fields: [applicationId], references: [id])
+  clientId         String
+  client           Client            @relation(fields: [clientId], references: [id])
+  signDate         DateTime
+  amount           String
+  annualRate       String
+  termMonths       Int
+  status           String            @default("ACTIVE")
+  scheduleJson     String
+  asset            Asset?
+  createdAt        DateTime          @default(now())
+  payments         Payment[]
+  paymentSchedules PaymentSchedule[]
+}
+
+model PaymentSchedule {
+  id         String         @id @default(cuid())
+  contractId String
+  contract   Contract       @relation(fields: [contractId], references: [id])
+  version    Int
+  createdAt  DateTime       @default(now())
+  reason     String?
+  isActive   Boolean        @default(true)
+  lines      ScheduleLine[]
+}
+
+model ScheduleLine {
+  id         String          @id @default(cuid())
+  scheduleId String
+  schedule   PaymentSchedule @relation(fields: [scheduleId], references: [id])
+  seq        Int
+  dueDate    String
+  principal  String
+  interest   String
+  vat        String
+  commission String
+  total      String
+  balance    String
+  status     String          @default("OPEN")
+  paidTotal  String          @default("0")
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  contractId  String
+  contract    Contract @relation(fields: [contractId], references: [id])
+  date        DateTime
+  amount      String
+  source      String
+  externalId  String?
+  allocations String   @default("[]")
+  createdAt   DateTime @default(now())
+}
+
+model Asset {
+  id         String     @id @default(cuid())
+  contractId String     @unique
+  contract   Contract   @relation(fields: [contractId], references: [id])
+  type       String
+  name       String
+  vin        String
+  number     String?
+  cost       String
+  status     String     @default("IN_USE")
+  insurance  Insurance?
+}
+
+model Insurance {
+  id           String @id @default(cuid())
+  assetId      String @unique
+  asset        Asset  @relation(fields: [assetId], references: [id])
+  insurer      String
+  policyNumber String
+  startDate    String
+  endDate      String
+  beneficiary  String
+  premium      String
+}
+
+model CommitteeSession {
+  id          String          @id @default(cuid())
+  date        DateTime
+  status      String          @default("PLANNED")
+  createdAt   DateTime        @default(now())
+  votes       CommitteeVote[]
+  sessionJson String          @default("[]")
+}
+
+model CommitteeVote {
+  id            String           @id @default(cuid())
+  sessionId     String
+  session       CommitteeSession @relation(fields: [sessionId], references: [id])
+  applicationId String
+  userId        String
+  user          User             @relation(fields: [userId], references: [id])
+  vote          String
+  comment       String?
+
+  @@unique([sessionId, applicationId, userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  at        DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  roleCode  String
+  object    String
+  objectId  String
+  operation String
+  oldValue  String?
+  newValue  String?
+  ip        String   @default("127.0.0.1")
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  channel      String   @default("INAPP")
+  subject      String
+  body         String
+  createdAt    DateTime @default(now())
+  readAt       DateTime?
+}
+
+model Config {
+  id         String   @id @default("system")
+  systemDate String   @default("")
+  updatedAt  DateTime @updatedAt
+  value      String?
+}
