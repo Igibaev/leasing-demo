@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole, requireUser } from "@/lib/auth";
-import { can } from "@/lib/roles";
+import { can, getRole } from "@/lib/roles";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge, STATUS_LABEL, statusColor } from "@/components/ui/badge";
 import { Table, Td } from "@/components/ui/table";
@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/datetime";
 import { moneyKzt } from "@/lib/money";
 import { slaLabel } from "@/lib/workflow";
-import { calculateSchedule, calculateProfitability, type ScheduleLine } from "@/lib/calc";
+import { calculateProfitability, type ScheduleLine } from "@/lib/calc";
 import { evaluateRisk } from "@/lib/scoring";
+import { buildScheduleForApplication } from "@/lib/schedule";
 import { getSystemDate } from "@/lib/audit";
 import { StepActions } from "@/components/step-actions";
 import { OverrideForm } from "@/components/override-form";
@@ -37,6 +38,10 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
   });
   if (!app) notFound();
 
+  const actorIds: string[] = Array.from(new Set<string>(app.statusHistory.map((entry) => String(entry.userId))));
+  const actors = actorIds.length ? await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [];
+  const actorNameById = new Map(actors.map((actor) => [actor.id, actor.name]));
+
   const activeContracts = await prisma.contract.findMany({ where: { status: "ACTIVE", application: { clientId: app.clientId } }, select: { amount: true } });
   const clientExposure = activeContracts.reduce((sum, contract) => sum + Number(contract.amount), 0);
   const exposureGroup = app.client.groupId
@@ -58,7 +63,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
   }
   if (lines.length === 0 && app.assetCost) {
     try {
-      lines = calculateSchedule({ assetCost: app.assetCost, downPayment: app.downPayment, termMonths: app.termMonths, annualRate: app.annualRate, scheduleType: app.scheduleType, firstPaymentDate: app.firstPaymentDate });
+      lines = buildScheduleForApplication(app);
     } catch {
       lines = [];
     }
@@ -75,9 +80,9 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
 
   const canDecide = pendingStep !== null && pendingStep.roleCode === session.code && app.createdById !== user.id && can(session.code, "applications", "approve");
   const isCreator = app.createdById === user.id;
-  const isExtended = risk.limits.route === "EXTENDED";
   const hardHits = stopHits.filter((factor) => factor.type === "HARD");
   const softHits = stopHits.filter((factor) => factor.type === "SOFT");
+  const isExtended = risk.limits.route === "EXTENDED" || softHits.length > 0;
   const overriddenCodes = (() => {
     try {
       return new Set(JSON.parse(app.stopFlags || "[]") as string[]);
@@ -138,7 +143,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
                         {stateVariant === "done" ? "✓" : index + 1}
                       </div>
                       <span className="whitespace-nowrap font-medium text-slate-700">{step.name}</span>
-                      <span className="whitespace-nowrap text-[10px] text-slate-400">{step.roleName}</span>
+                      <span className="whitespace-nowrap text-[10px] text-slate-400">{getRole(step.roleCode).name}</span>
                       <span className={`whitespace-nowrap text-[10px] ${sla.overdue ? "font-semibold text-red-600" : "text-slate-500"}`}>{formatDate(step.deadline)} · {sla.label}</span>
                     </div>
                     {index < app.workflowSteps.length - 1 ? <div className="mx-1 mb-6 h-px w-8 bg-slate-300" /> : null}
@@ -293,8 +298,8 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
                 <li key={entry.id} className="flex items-start gap-2">
                   <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
                   <div>
-                    <span className="text-slate-700">{entry.to}</span> · {formatDate(entry.at)}
-                    <div className="text-slate-400">{entry.comment || "без комментария"} — {entry.actorName}</div>
+                    <span className="text-slate-700">{STATUS_LABEL[entry.toStatus] ?? entry.toStatus}</span> · {formatDate(entry.at)}
+                    <div className="text-slate-400">{entry.comment || "без комментария"} — {actorNameById.get(entry.userId) ?? "—"}</div>
                   </div>
                 </li>
               ))}

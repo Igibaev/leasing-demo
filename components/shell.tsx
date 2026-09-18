@@ -83,17 +83,20 @@ export async function Shell({ children, currentPath }: { children: React.ReactNo
         </div>
         <div className="flex items-center gap-1 overflow-x-auto bg-slate-100 px-4 text-xs">
           {session ? <span className="mr-2 py-2 font-medium text-slate-500">Роль: {roleName}</span> : <span className="py-2 text-slate-400">Войдите под ролью</span>}
-          {menu.map((item) => (
-            <Link
-              key={item.module}
-              href={`/${item.module === "portfolio" ? "portfolio" : item.module}`}
-              className={`shrink-0 rounded-t-md px-3 py-2 font-medium transition-colors ${
-                currentPath?.startsWith(`/${item.module}`) ? "border-b-2 border-blue-600 bg-white text-blue-700" : "text-slate-600 hover:bg-white hover:text-slate-900"
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
+          {menu.map((item) => {
+            const href = item.module === "dashboard" ? "/" : `/${item.module}`;
+            return (
+              <Link
+                key={item.module}
+                href={href}
+                className={`shrink-0 rounded-t-md px-3 py-2 font-medium transition-colors ${
+                  currentPath === href || (currentPath?.startsWith(`${href}/`) && href !== "/") ? "border-b-2 border-blue-600 bg-white text-blue-700" : "text-slate-600 hover:bg-white hover:text-slate-900"
+                }`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>

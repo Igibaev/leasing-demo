@@ -400,6 +400,59 @@ async function main() {
     }
   }
 
+  const large = clientIds.length
+    ? clients[intBetween(0, clientIds.length - 1)]
+    : null;
+  if (large) {
+    const bigAsset = Math.round(between(850_000_000, 1_200_000_000));
+    const bigDown = Math.round(bigAsset * 0.15);
+    const bigFinanced = bigAsset - bigDown;
+    const bigTerm = 36;
+    const bigRate = between(16, 20);
+    const bigSchedule = calculateSchedule({
+      assetCost: String(bigAsset),
+      downPayment: String(bigDown),
+      termMonths: bigTerm,
+      annualRate: bigRate.toFixed(2),
+      commission: String(Math.round(bigAsset * 0.006)),
+      commissionType: "IN_SCHEDULE" as const,
+      vatRate: "12",
+      firstPaymentDate: dateParam(addMonths(new Date(), 1)),
+      scheduleType: "ANNUITY" as const,
+    });
+    const bigApp = await prisma.application.create({
+      data: {
+        number: `Z-2025-${numberCounter++}`,
+        clientId: large.id,
+        product: pick(PRODUCTS),
+        assetCost: String(bigAsset),
+        downPayment: String(bigDown),
+        financedAmount: String(bigFinanced),
+        termMonths: bigTerm,
+        annualRate: bigRate.toFixed(2),
+        scheduleType: "ANNUITY",
+        status: "DRAFT",
+        createdById: userFor("ROLE-01"),
+        createdAt: addDays(today, -1),
+        scheduleJson: JSON.stringify(bigSchedule),
+      },
+    });
+    const bigFacts = factsFor({ ...large, financeJson: JSON.stringify(large.finance) } as never, bigApp as never);
+    const bigScoring = calculateScoring({
+      financialCondition: bigFacts.financialCondition,
+      debtBurden: bigFacts.debtBurden,
+      paymentDiscipline: bigFacts.paymentDiscipline,
+      industry: bigFacts.industry,
+      assetQuality: bigFacts.assetQuality,
+      liquidity: bigFacts.liquidity,
+      downPayment: bigFacts.downPayment,
+      businessAge: bigFacts.businessAge,
+      additionalCollateral: bigFacts.additionalCollateral,
+    }, DEFAULT_SCORING_MODEL);
+    await prisma.application.update({ where: { id: bigApp.id }, data: { riskScore: Math.round(Number(bigScoring.score)), riskRating: bigScoring.rating } });
+    apps.push({ id: bigApp.id, number: bigApp.number, clientId: large.id, status: "DRAFT", product: "Автобус", assetCost: String(bigAsset), downPayment: String(bigDown), financedAmount: String(bigFinanced), termMonths: bigTerm, annualRate: bigRate.toFixed(2), schedule: bigSchedule, riskScore: Math.round(Number(bigScoring.score)), riskRating: bigScoring.rating, createdById: userFor("ROLE-01"), createdAt: addDays(today, -1) });
+  }
+
   const approvedApps = apps.filter((app) => ["APPROVED", "CONTRACT", "FUNDED"].includes(app.status));
   const toFund = approvedApps.slice(0, 15);
   const contractSeeds: ContractSeed[] = [];

@@ -9,9 +9,11 @@ import { SESSION_COOKIE, requireRole, requireUser } from "@/lib/auth";
 import { can } from "@/lib/roles";
 import { writeAudit, getSystemDate } from "@/lib/audit";
 import { BASE_ROUTE, createWorkflowForApplication, routeFor } from "@/lib/workflow";
-import { calculateSchedule, allocatePayment, type ScheduleLine, type OpenScheduleLine } from "@/lib/calc";
+import { allocatePayment, type ScheduleLine, type OpenScheduleLine } from "@/lib/calc";
+import { buildScheduleForApplication } from "@/lib/schedule";
+import { evaluateRiskFor, riskProfileToDto } from "@/lib/risk";
 import Decimal from "decimal.js";
-import { addDays, dateParam, addMonths } from "@/lib/datetime";
+import { addDays } from "@/lib/datetime";
 import { readFileSync } from "fs";
 import path from "path";
 
@@ -125,9 +127,16 @@ export async function createApplicationAction(_prev: unknown, formData: FormData
       createdById: user.id,
       riskScore: 0,
       riskRating: "C",
+      scheduleJson: JSON.stringify(buildScheduleForApplication(data)),
     },
     select: { id: true },
   });
+  const created = await prisma.application.findUnique({ where: { id: application.id }, include: { client: true } });
+  if (created) {
+    const risk = await evaluateRiskFor(created.client, created);
+    const dto = riskProfileToDto(risk);
+    await prisma.application.update({ where: { id: application.id }, data: { riskScore: dto.riskScore, riskRating: dto.riskRating } });
+  }
   await writeAudit({ userId: user.id, roleCode: role.code, object: "application", objectId: application.id, operation: "CREATE", newValue: JSON.stringify({ number, clientId: data.clientId, financedAmount: financed }) });
   revalidatePath("/applications");
   redirect(`/applications/${application.id}`);
@@ -136,46 +145,35 @@ export async function createApplicationAction(_prev: unknown, formData: FormData
 export async function submitApplicationAction(applicationId: string) {
   const role = await requireRole();
   const user = await requireUser();
-  const application = await prisma.application.findUnique({ where: { id: applicationId }, include: { workflowSteps: true } });
+  const application = await prisma.application.findUnique({ where: { id: applicationId }, include: { workflowSteps: true, client: true } });
   if (!application) return { error: "Заявка не найдена" };
   if (application.createdById !== user.id) return { error: "Создатель заявки должен передать её на рассмотрение" };
   if (application.status !== "DRAFT" && application.status !== "REGISTERED") return { error: "Заявка уже в работе" };
+  const lessons: string[] = [];
   const existing = application.workflowSteps;
-  let route = BASE_ROUTE;
+  let routeLength = existing.length;
   if (existing.length === 0) {
-    const soft = String(application.stopFlags).includes("HIGH_EXPOSURE") || String(application.stopFlags).includes("NEW_CLIENT");
-    route = routeFor(false, soft);
+    const risk = await evaluateRiskFor(application.client, application);
+    const overridden = new Set<string>();
+    try {
+      JSON.parse(application.stopFlags || "[]").forEach((code: unknown) => { if (typeof code === "string") overridden.add(code); });
+    } catch { /* сохраняем пустой набор */ }
+    const limitExceeded = risk.limits.checks.some((check) => check.exceeded);
+    const softHits = risk.stopFactors.hits.filter((factor) => factor.type === "SOFT" && !overridden.has(factor.code));
+    const hardHits = risk.stopFactors.hits.filter((factor) => factor.type === "HARD");
+    if (hardHits.length) lessons.push(`Жёсткий стоп-фактор блокирует сделку: ${hardHits.map((factor) => factor.name).join("; ")}`);
+    const route = routeFor(limitExceeded, softHits.length > 0);
     await createWorkflowForApplication(application.id, route, user.id);
+    routeLength = route.length;
+    lessons.push(`Маршрут построен: ${route.length} шагов${route === BASE_ROUTE ? "" : " (расширенный — лимит или мягкий стоп-фактор)"}`);
   }
   await prisma.application.update({ where: { id: application.id }, data: { status: "REGISTERED" } });
   await prisma.applicationStatusHistory.create({ data: { applicationId: application.id, fromStatus: "DRAFT", toStatus: "REGISTERED", userId: user.id, comment: "Заявка отправлена на рассмотрение" } });
-  await writeAudit({ userId: user.id, roleCode: role.code, object: "application", objectId: application.id, operation: "SUBMIT", newValue: String(route.length) });
-  await prisma.notification.create({ data: { userId: application.createdById, channel: "INAPP", subject: "Заявка в работе", body: `Заявка ${application.number} отправлена на маршрут согласования (${route.length} шагов)` } });
+  await writeAudit({ userId: user.id, roleCode: role.code, object: "application", objectId: application.id, operation: "SUBMIT", newValue: String(routeLength) });
+  await prisma.notification.create({ data: { userId: application.createdById, channel: "INAPP", subject: "Заявка в работе", body: `Заявка ${application.number} отправлена на маршрут согласования (${routeLength} шагов)` } });
   revalidatePath("/");
   revalidatePath(`/applications/${applicationId}`);
-  return { ok: true };
-}
-
-export async function saveScheduleToApplicationAction(applicationId: string) {
-  const user = await requireUser();
-  const application = await prisma.application.findUnique({ where: { id: applicationId } });
-  if (!application) return { error: "Заявка не найдена" };
-  const scheduleInput = {
-    assetCost: application.assetCost,
-    downPayment: application.downPayment,
-    termMonths: application.termMonths,
-    annualRate: application.annualRate,
-    commission: String(Number(application.assetCost) * 0.006),
-    commissionType: "IN_SCHEDULE" as const,
-    vatRate: "12",
-    firstPaymentDate: dateParam(addMonths(new Date(), 1)),
-    scheduleType: application.scheduleType as "ANNUITY" | "DIFFERENTIATED",
-  };
-  const lines = calculateSchedule(scheduleInput);
-  await prisma.application.update({ where: { id: application.id }, data: { scheduleJson: JSON.stringify(lines) } });
-  await writeAudit({ userId: user.id, roleCode: (await requireRole()).code, object: "application", objectId: application.id, operation: "SCHEDULE_SAVED", newValue: JSON.stringify({ lines: lines.length }) });
-  revalidatePath(`/applications/${applicationId}`);
-  return { ok: true };
+  return { ok: true, lessons };
 }
 
 export async function decideStepAction(applicationId: string, stepId: string, decision: "APPROVE" | "REWORK" | "REJECT", comment: string) {
@@ -220,6 +218,30 @@ export async function decideStepAction(applicationId: string, stepId: string, de
 
 function stepIsCommittee(index: number, length: number): boolean {
   return index === length - 1;
+}
+
+type ActiveSchedule = { lines: (ScheduleLine & { id: string; paidTotal: string; status: string })[] };
+
+function openLinesFor(schedule: ActiveSchedule): OpenScheduleLine[] {
+  return schedule.lines
+    .filter((line) => line.status === "OPEN" || line.status === "PARTIAL")
+    .map((line) => ({ id: line.id, seq: line.seq, dueDate: line.dueDate, principal: line.principal, interest: line.interest, vat: line.vat, commission: line.commission, total: line.total, balance: line.balance }));
+}
+
+function lineRemaining(line: { total: string; paidTotal?: string }): number {
+  return Number(line.total) - Number(line.paidTotal ?? 0);
+}
+
+async function allocateToScheduleLines(schedule: ActiveSchedule, allocations: { scheduleLineId: string; principal: string; interest: string; vat: string; commission: string; penalty?: string }[]): Promise<void> {
+  for (const allocation of allocations) {
+    if (allocation.scheduleLineId === "ADVANCE") continue;
+    const line = schedule.lines.find((entry) => entry.id === allocation.scheduleLineId);
+    if (!line) continue;
+    const added = Number(allocation.principal) + Number(allocation.interest) + Number(allocation.vat) + Number(allocation.commission) + Number(allocation.penalty ?? 0);
+    const cumulative = Number(line.paidTotal ?? 0) + added;
+    const fullyPaid = cumulative >= Number(line.total) - 0.01;
+    await prisma.scheduleLine.update({ where: { id: line.id }, data: { paidTotal: cumulative.toFixed(2), status: fullyPaid ? "PAID" : "PARTIAL" } });
+  }
 }
 
 function statusForIndex(index: number): string {
@@ -303,24 +325,30 @@ export async function importBankStatementAction() {
   const filePath = path.join(process.cwd(), "mocks", "bank-statement.csv");
   const content = readFileSync(filePath, "utf8");
   const rows = content.split("\n").slice(1).filter((row) => row.trim().length > 0);
+  const contracts = await prisma.contract.findMany({
+    where: { status: "ACTIVE" },
+    include: { paymentSchedules: { where: { isActive: true }, include: { lines: true } } },
+    orderBy: { signDate: "asc" },
+  });
   let imported = 0;
   let allocated = 0;
   for (const row of rows) {
     const [externalId, dateStr, amountStr] = row.split(",").map((cell) => cell.trim());
     if (!externalId || !dateStr || !amountStr) continue;
-    const contract = await prisma.contract.findFirst({
-      where: { status: "ACTIVE" },
-      include: { paymentSchedules: { where: { isActive: true }, include: { lines: true } } },
-      orderBy: { signDate: "asc" },
-    });
-    if (!contract) continue;
     const existing = await prisma.payment.findFirst({ where: { externalId } });
     if (existing) continue;
+    const candidate = contracts.find((contract) => {
+      const schedule = contract.paymentSchedules[0];
+      if (!schedule) return false;
+      const open = openLinesFor(schedule);
+      return open.reduce((sum, line) => sum + lineRemaining(line), 0) >= Number(amountStr);
+    });
+    const contract = candidate ?? contracts.find((entry) => entry.paymentSchedules[0]?.lines.some((line) => line.status === "OPEN" || line.status === "PARTIAL")) ?? contracts[0];
+    if (!contract) continue;
     const schedule = contract.paymentSchedules[0];
     if (!schedule) continue;
-    const openLines: OpenScheduleLine[] = schedule.lines
-      .filter((line) => line.status === "OPEN")
-      .map((line) => ({ id: line.id, seq: line.seq, dueDate: line.dueDate, principal: line.principal, interest: line.interest, vat: line.vat, commission: line.commission, total: line.total, balance: line.balance }));
+    const openLines = openLinesFor(schedule);
+    const allocations = openLines.length ? allocatePayment(amountStr, openLines) : [];
     const payment = await prisma.payment.create({
       data: {
         contractId: contract.id,
@@ -328,23 +356,13 @@ export async function importBankStatementAction() {
         amount: amountStr,
         source: "BANK",
         externalId,
-        allocations: "[]",
+        allocations: JSON.stringify(allocations),
       },
       select: { id: true },
     });
-    if (openLines.length) {
-      const allocation = allocatePayment(amountStr, openLines);
-      await prisma.payment.update({ where: { id: payment.id }, data: { allocations: JSON.stringify(allocation) } });
-      const paidIds = new Map(allocation.filter((a) => a.scheduleLineId !== "ADVANCE").map((a) => [a.scheduleLineId, a]));
-      for (const line of schedule.lines) {
-        const alloc = paidIds.get(line.id);
-        if (!alloc) continue;
-        const paid = String(Number(line.paidTotal) + Number(alloc.principal) + Number(alloc.interest) + Number(alloc.vat) + Number(alloc.commission));
-        const full = Number(paid) >= Number(line.total) - 0.01;
-        await prisma.scheduleLine.update({ where: { id: line.id }, data: { paidTotal: paid, status: full ? "PAID" : "OPEN" } });
-      }
-      allocated += 1;
-    }
+    await allocateToScheduleLines(schedule, allocations);
+    if (allocations.length) allocated += 1;
+    await writeAudit({ userId: user.id, roleCode: role.code, object: "contract", objectId: contract.id, operation: "PAYMENT_IMPORT", newValue: JSON.stringify({ amount: amountStr, externalId, reference: payment.id }) });
     imported += 1;
   }
   await writeAudit({ userId: user.id, roleCode: role.code, object: "payment", objectId: "statement", operation: "IMPORT_BANK", newValue: JSON.stringify({ imported, allocated }) });
@@ -408,21 +426,10 @@ export async function createPaymentAction(contractId: string, amount: string) {
   if (!contract) return { error: "Договор не найден" };
   const schedule = contract.paymentSchedules[0];
   if (!schedule) return { error: "У договора нет активного графика" };
-  const openLines: OpenScheduleLine[] = schedule.lines
-    .filter((line) => line.status === "OPEN" || line.status === "PARTIAL")
-    .map((line) => ({ id: line.id, seq: line.seq, dueDate: line.dueDate, principal: line.principal, interest: line.interest, vat: line.vat, commission: line.commission, total: line.total, balance: line.balance }));
+  const openLines = openLinesFor(schedule);
   const allocations = allocatePayment(parsed.toFixed(2), openLines);
-  const now = new Date();
-  const payment = await prisma.payment.create({ data: { contractId, date: now, amount: parsed.toFixed(2), source: "MANUAL", externalId: null, allocations: JSON.stringify(allocations) } });
-  for (const allocation of allocations) {
-    if (allocation.scheduleLineId === "ADVANCE") continue;
-    const line = schedule.lines.find((entry) => entry.id === allocation.scheduleLineId);
-    if (!line) continue;
-    const added = Number(allocation.principal) + Number(allocation.interest) + Number(allocation.vat) + Number(allocation.commission) + Number(allocation.penalty ?? 0);
-    const cumulative = Number(line.paidTotal ?? 0) + added;
-    const fullyPaid = cumulative >= Number(line.total) - 0.01;
-    await prisma.scheduleLine.update({ where: { id: line.id }, data: { paidTotal: cumulative.toFixed(2), status: fullyPaid ? "PAID" : "PARTIAL" } });
-  }
+  const payment = await prisma.payment.create({ data: { contractId, date: new Date(await getSystemDate()), amount: parsed.toFixed(2), source: "MANUAL", externalId: null, allocations: JSON.stringify(allocations) } });
+  await allocateToScheduleLines(schedule, allocations);
   const allocatedTotal = allocations.reduce((sum, allocation) => sum + Number(allocation.principal) + Number(allocation.interest) + Number(allocation.vat) + Number(allocation.commission) + Number(allocation.penalty ?? 0), 0);
   await writeAudit({ userId: user.id, roleCode: role.code, object: "contract", objectId: contractId, operation: "PAYMENT_CREATE", newValue: JSON.stringify({ amount: parsed.toFixed(2), allocated: allocatedTotal.toFixed(2), reference: payment.id }) });
   revalidatePath(`/contracts/${contractId}`);

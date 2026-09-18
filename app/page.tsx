@@ -40,7 +40,7 @@ export default async function DashboardPage() {
       include: { application: { include: { client: true, createdBy: { select: { name: true } } } } },
       orderBy: { deadline: "asc" },
     }),
-    prisma.contract.findMany({ where: { status: "ACTIVE" }, include: { paymentSchedules: { where: { isActive: true }, include: { lines: true } }, application: true } }),
+    prisma.contract.findMany({ where: { status: "ACTIVE" }, include: { paymentSchedules: { where: { isActive: true }, include: { lines: true } }, application: { include: { client: true } } } }),
     prisma.client.count(),
     prisma.notification.count({ where: { userId: session.id, readAt: null } }),
   ]);

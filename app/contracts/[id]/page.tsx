@@ -49,7 +49,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-bold text-slate-900">{contract.number}</h1>
             <Badge variant={statusColor(contract.status)}>{STATUS_LABEL[contract.status] ?? contract.status}</Badge>
-            <Badge variant="outline">{contract.version}. версия графика</Badge>
+            <Badge variant="outline">{activeSchedule?.version ?? allSchedules[0]?.version ?? "-"}. версия графика</Badge>
           </div>
           <p className="mt-1 text-sm text-slate-500">
             {contract.application.client.name} · {contract.application.product} · сумма {moneyKzt(contract.amount)} · {contract.termMonths} мес. · {contract.annualRate}% годовых · подписан {formatDate(contract.signDate)}
@@ -71,7 +71,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <Card>
-            <CardHeader title={`График платежей · ${lines.length} периодов`} subtitle={allSchedules.length > 1 ? `показана версия ${activeSchedule?.version ?? contract.version}; все версии хранятся, история не стирается` : undefined} />
+            <CardHeader title={`График платежей · ${lines.length} периодов`} subtitle={allSchedules.length > 1 ? `показана версия ${activeSchedule?.version ?? allSchedules[0]?.version ?? "-"}; все версии хранятся, история не стирается` : undefined} />
             <Table headers={["№", "Дата", "Основной долг", "Проценты", "Комиссия", "НДС", "Платёж", "Остаток", "Оплачено", "Статус"]}>
               {lines.map((line) => (
                 <tr key={line.id}>
