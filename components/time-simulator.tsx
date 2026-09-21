@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { completeAction } from "@/lib/client-navigation";
 import { simulateTimeAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Field, Select } from "@/components/ui/form";
 
 export function TimeSimulator() {
+  const [, startTransition] = useTransition();
   const [days, setDays] = useState(30);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -13,7 +15,7 @@ export function TimeSimulator() {
   return (
     <div className="space-y-3">
       {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div> : null}
-      {result ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">Системная дата: {result}. Все DPD, SLA и EWS пересчитаны.</div> : null}
+      {result ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">Системная дата: {result}. Просрочка и SLA считаются на новую дату.</div> : null}
       <div className="flex items-end gap-2">
         <Field label="Сдвинуть время на">
           <Select value={days} onChange={(event) => setDays(Number(event.target.value))}>
@@ -26,15 +28,17 @@ export function TimeSimulator() {
         </Field>
         <Button
           disabled={busy}
-          onClick={async () => {
+          onClick={() => startTransition(async () => {
             setBusy(true);
             setError(null);
             setResult(null);
+            try {
             const response = await simulateTimeAction(days);
             if (response && "error" in response && response.error) setError(response.error);
-            if (response && "ok" in response) setResult(response.next ?? "");
-            setBusy(false);
-          }}
+            if (response && "ok" in response) { setResult(response.next ?? ""); completeAction("Системная дата обновлена."); }
+            } catch { setError("Не удалось изменить дату. Повторите попытку."); }
+            finally { setBusy(false); }
+          })}
         >
           {busy ? "Перематываю..." : "Симулировать время"}
         </Button>

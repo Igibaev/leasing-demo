@@ -18,7 +18,8 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!value) return null;
   const [userId, roleCode] = value.split(":");
   if (!userId || !roleCode) return null;
-  return { id: userId, name: "", email: "", roleCode };
+  const { prisma } = await import("./prisma");
+  return prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true, roleCode: true } });
 }
 
 export async function requireUser(): Promise<SessionUser> {

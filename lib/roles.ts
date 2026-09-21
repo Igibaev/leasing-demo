@@ -33,7 +33,7 @@ export interface RoleInfo {
 
 export const ALL_ROLES: RoleInfo[] = [
   { code: "ROLE-01", name: "Менеджер по продажам", permissions: { dashboard: ALL, clients: ALL, applications: ALL, calculator: ALL, contracts: { view: true }, account: VIEW_ONLY } },
-  { code: "ROLE-02", name: "Руководитель продаж", permissions: { dashboard: ALL, clients: ALL, applications: { view: true, approve: true }, calculator: ALL, portfolio: VIEW_ONLY } },
+  { code: "ROLE-02", name: "Руководитель продаж", permissions: { dashboard: ALL, clients: ALL, applications: { view: true, approve: true }, calculator: ALL, portfolio: VIEW_ONLY, committee: INSPECT } },
   { code: "ROLE-03", name: "Кредитный аналитик", permissions: { dashboard: ALL, clients: VIEW_ONLY, applications: { view: true, approve: true, edit: true }, calculator: VIEW_ONLY, portfolio: VIEW_ONLY } },
   { code: "ROLE-04", name: "Риск-менеджер", permissions: { dashboard: ALL, clients: VIEW_ONLY, applications: { view: true, approve: true }, portfolio: VIEW_ONLY, overdue: VIEW_ONLY } },
   { code: "ROLE-05", name: "Руководитель риск-подразделения", permissions: { dashboard: ALL, applications: { view: true, approve: true }, portfolio: ALL, overdue: VIEW_ONLY, clients: VIEW_ONLY } },
@@ -46,7 +46,7 @@ export const ALL_ROLES: RoleInfo[] = [
   { code: "ROLE-12", name: "Мониторинг", permissions: { dashboard: ALL, monitoring: ALL, clients: VIEW_ONLY, contracts: VIEW_ONLY } },
   { code: "ROLE-13", name: "Взыскание", permissions: { dashboard: ALL, overdue: ALL, clients: VIEW_ONLY, contracts: VIEW_ONLY } },
   { code: "ROLE-14", name: "Член кредитного комитета", permissions: { dashboard: ALL, committee: ALL, applications: VIEW_ONLY, clients: VIEW_ONLY } },
-  { code: "ROLE-15", name: "Руководство", permissions: { dashboard: ALL, portfolio: ALL, committee: { view: true }, audit: VIEW_ONLY, clients: VIEW_ONLY } },
+  { code: "ROLE-15", name: "Руководство", permissions: { dashboard: ALL, portfolio: ALL, committee: INSPECT, audit: VIEW_ONLY, clients: VIEW_ONLY } },
   { code: "ROLE-16", name: "Внутренний аудит", permissions: { dashboard: ALL, audit: ALL, portfolio: VIEW_ONLY, clients: VIEW_ONLY, payments: VIEW_ONLY, applications: VIEW_ONLY } },
   { code: "ROLE-17", name: "Системный администратор", permissions: { dashboard: ALL, admin: ALL, audit: ALL, clients: ALL, applications: ALL, contracts: ALL, payments: ALL, portfolio: ALL, committee: ALL, monitoring: ALL, overdue: ALL, calculator: ALL } },
   { code: "ROLE-18", name: "Клиент (личный кабинет)", permissions: { account: ALL, dashboard: VIEW_ONLY } },
@@ -55,7 +55,7 @@ export const ALL_ROLES: RoleInfo[] = [
 const ROLE_MAP = new Map(ALL_ROLES.map((role) => [role.code, role]));
 
 export function getRole(code: string): RoleInfo {
-  return ROLE_MAP.get(code) ?? ALL_ROLES[16]!;
+  return ROLE_MAP.get(code) ?? { code, name: "Неизвестная роль", permissions: {} };
 }
 
 export function can(roleCode: string, module: Module, action: Action): boolean {

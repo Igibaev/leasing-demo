@@ -14,7 +14,7 @@ export function ScheduleCalculator() {
     downPayment: "12000000",
     termMonths: 36,
     annualRate: "20",
-    commission: "2",
+    commission: "360000",
     commissionType: "IN_SCHEDULE",
     vatBase: "INTEREST_AND_COMMISSION",
     scheduleType: "ANNUITY",
@@ -55,7 +55,7 @@ export function ScheduleCalculator() {
             <option value="DIFFERENTIATED">Дифференцированный</option>
           </Select>
         </Field>
-        <Field label="Комиссия, %">
+        <Field label="Комиссия за весь срок, ₸">
           <Input value={params.commission ?? "0"} onChange={(event) => set({ commission: event.target.value })} inputMode="decimal" />
         </Field>
         <Field label="Комиссия">
@@ -85,7 +85,7 @@ export function ScheduleCalculator() {
             <div className="text-[10px] uppercase text-slate-400">сумма финансирования</div>
           </div>
           <div className="rounded-md bg-slate-50 px-3 py-2 text-center">
-            <div className="text-lg font-bold text-slate-900">{(Number(result.profitability.irr) * 100).toFixed(2)}%</div>
+            <div className="text-lg font-bold text-slate-900">{Number(result.profitability.irr).toFixed(2)}%</div>
             <div className="text-[10px] uppercase text-slate-400">IRR годовых</div>
           </div>
           <div className="rounded-md bg-slate-50 px-3 py-2 text-center">

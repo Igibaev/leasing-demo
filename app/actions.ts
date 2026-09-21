@@ -1,6 +1,5 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { z } from "zod";
@@ -8,15 +7,16 @@ import { prisma } from "@/lib/prisma";
 import { SESSION_COOKIE, requireRole, requireUser } from "@/lib/auth";
 import { can } from "@/lib/roles";
 import { writeAudit, getSystemDate } from "@/lib/audit";
-import { BASE_ROUTE, createWorkflowForApplication, routeFor } from "@/lib/workflow";
-import { allocatePayment, type ScheduleLine, type OpenScheduleLine } from "@/lib/calc";
+import { BASE_ROUTE, routeFor } from "@/lib/workflow";
+import { type ScheduleLine } from "@/lib/calc";
+import { paymentAmount, recordPayment } from "@/lib/payments";
 import { buildScheduleForApplication } from "@/lib/schedule";
 import { evaluateRiskFor, riskProfileToDto } from "@/lib/risk";
 import Decimal from "decimal.js";
-import { addDays } from "@/lib/datetime";
+import { addDays, addWorkingHours } from "@/lib/datetime";
 import { readFileSync } from "fs";
 import path from "path";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 
 function zodError(error: z.ZodError): string {
   return error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
@@ -27,13 +27,14 @@ export async function switchRoleAction(formData: FormData) {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, roleCode: true } });
   if (!user) return { error: "Пользователь не найден" };
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, `${user.id}:${user.roleCode}`, { path: "/", maxAge: 60 * 60 * 24 * 7 });
-  redirect("/");
+  cookieStore.set(SESSION_COOKIE, `${user.id}:${user.roleCode}`, { path: "/", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 24 * 7 });
+  const returnTo = String(formData.get("returnTo") || "/");
+  return { redirectTo: /^\/(?![\/\\])/.test(returnTo) ? returnTo : "/" };
 }
 
 const clientSchema = z.object({
   clientType: z.enum(["LEGAL", "IE", "INDIVIDUAL"]),
-  binIin: z.string().min(12).max(12),
+  binIin: z.string().regex(/^\d{12}$/, "БИН/ИИН должен содержать 12 цифр"),
   name: z.string().min(2),
   oked: z.string().min(2),
   registrationDate: z.string().min(4),
@@ -80,7 +81,7 @@ export async function createClientAction(_prev: unknown, formData: FormData) {
   await writeAudit({ userId: user.id, roleCode: role.code, object: "client", objectId: client.id, operation: "CREATE", newValue: JSON.stringify({ name: data.name, binIin: data.binIin }) });
   await prisma.client.update({ where: { id: client.id }, data: { ewsColor: "GREEN", riskRating: "C" } });
   revalidatePath("/clients");
-  redirect(`/clients/${client.id}`);
+  return { ok: true, redirectTo: `/clients/${client.id}` };
 }
 
 const mockDocumentSchema = z.object({
@@ -115,7 +116,7 @@ export async function runAmlCheckAction(clientId: string) {
   const hasPep = client.relatedParties.some((party) => party.isPep);
   const result = hasPep ? "REVIEW_REQUIRED" : "CLEAR";
   const riskLevel = hasPep ? "HIGH" : client.ewsColor === "RED" ? "HIGH" : "LOW";
-  const checkedAt = new Date();
+  const checkedAt = new Date(await getSystemDate());
   const nextReviewDate = new Date(Date.UTC(checkedAt.getUTCFullYear() + (riskLevel === "HIGH" ? 1 : 3), checkedAt.getUTCMonth(), checkedAt.getUTCDate())).toISOString().slice(0, 10);
   const check = await prisma.amlCheck.create({ data: { clientId, result, riskLevel, source: "DEMO_KZ_AML", details: hasPep ? "Обнаружен PEP-признак у связанного лица; требуется ручная проверка" : "Совпадений в демонстрационных перечнях не найдено", checkedById: user.id, checkedAt, nextReviewDate } });
   await writeAudit({ userId: user.id, roleCode: role.code, object: "aml_check", objectId: check.id, operation: "CHECK", newValue: JSON.stringify({ clientId, result, riskLevel, nextReviewDate }) });
@@ -129,7 +130,7 @@ const applicationSchema = z.object({
   assetCost: z.string().regex(/^\d+(\.\d+)?$/),
   downPayment: z.string().regex(/^\d+(\.\d+)?$/),
   termMonths: z.coerce.number().int().min(6).max(120),
-  annualRate: z.string().regex(/^\d+(\.\d+)?$/),
+  annualRate: z.string().regex(/^\d+(\.\d+)?$/).refine(value => new Decimal(value).lte(1000), "Ставка не может превышать 1000%"),
   scheduleType: z.enum(["ANNUITY", "DIFFERENTIATED"]),
 });
 
@@ -147,12 +148,14 @@ export async function createApplicationAction(_prev: unknown, formData: FormData
   });
   if (!parsed.success) return { error: zodError(parsed.error) };
   const data = parsed.data;
+  if (!await prisma.client.findUnique({ where: { id: data.clientId } })) return { error: "Клиент не найден" };
   const down = new (await import("decimal.js")).Decimal(data.downPayment);
   const cost = new (await import("decimal.js")).Decimal(data.assetCost);
   if (down.gte(cost)) return { error: "Первоначальный взнос должен быть меньше стоимости предмета" };
   const financed = cost.minus(down).toFixed(2);
   const user = await requireUser();
-  const number = `Z-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
+  const systemDate = new Date(await getSystemDate());
+  const number = `Z-${systemDate.getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`;
   const application = await prisma.application.create({
     data: {
       number,
@@ -168,7 +171,7 @@ export async function createApplicationAction(_prev: unknown, formData: FormData
       createdById: user.id,
       riskScore: 0,
       riskRating: "C",
-      scheduleJson: JSON.stringify(buildScheduleForApplication(data)),
+      scheduleJson: JSON.stringify(buildScheduleForApplication(data, addDays(systemDate, 30).toISOString().slice(0, 10))),
     },
     select: { id: true },
   });
@@ -180,109 +183,81 @@ export async function createApplicationAction(_prev: unknown, formData: FormData
   }
   await writeAudit({ userId: user.id, roleCode: role.code, object: "application", objectId: application.id, operation: "CREATE", newValue: JSON.stringify({ number, clientId: data.clientId, financedAmount: financed }) });
   revalidatePath("/applications");
-  redirect(`/applications/${application.id}`);
+  return { ok: true, redirectTo: `/applications/${application.id}` };
 }
 
 export async function submitApplicationAction(applicationId: string) {
   const role = await requireRole();
   const user = await requireUser();
-  const application = await prisma.application.findUnique({ where: { id: applicationId }, include: { workflowSteps: true, client: true } });
-  if (!application) return { error: "Заявка не найдена" };
-  if (application.createdById !== user.id) return { error: "Создатель заявки должен передать её на рассмотрение" };
-  if (application.status !== "DRAFT" && application.status !== "REGISTERED") return { error: "Заявка уже в работе" };
-  const lessons: string[] = [];
-  const existing = application.workflowSteps;
-  let routeLength = existing.length;
-  if (existing.length === 0) {
-    const risk = await evaluateRiskFor(application.client, application);
-    const overridden = new Set<string>();
-    try {
-      JSON.parse(application.stopFlags || "[]").forEach((code: unknown) => { if (typeof code === "string") overridden.add(code); });
-    } catch { /* сохраняем пустой набор */ }
-    const limitExceeded = risk.limits.checks.some((check) => check.exceeded);
-    const softHits = risk.stopFactors.hits.filter((factor) => factor.type === "SOFT" && !overridden.has(factor.code));
-    const hardHits = risk.stopFactors.hits.filter((factor) => factor.type === "HARD");
-    if (hardHits.length) lessons.push(`Жёсткий стоп-фактор блокирует сделку: ${hardHits.map((factor) => factor.name).join("; ")}`);
-    const route = routeFor(limitExceeded, softHits.length > 0);
-    await createWorkflowForApplication(application.id, route, user.id);
-    routeLength = route.length;
-    lessons.push(`Маршрут построен: ${route.length} шагов${route === BASE_ROUTE ? "" : " (расширенный — лимит или мягкий стоп-фактор)"}`);
-  }
-  await prisma.application.update({ where: { id: application.id }, data: { status: "REGISTERED" } });
-  await prisma.applicationStatusHistory.create({ data: { applicationId: application.id, fromStatus: "DRAFT", toStatus: "REGISTERED", userId: user.id, comment: "Заявка отправлена на рассмотрение" } });
-  await writeAudit({ userId: user.id, roleCode: role.code, object: "application", objectId: application.id, operation: "SUBMIT", newValue: String(routeLength) });
-  await prisma.notification.create({ data: { userId: application.createdById, channel: "INAPP", subject: "Заявка в работе", body: `Заявка ${application.number} отправлена на маршрут согласования (${routeLength} шагов)` } });
-  revalidatePath("/");
+  if (!can(role.code, "applications", "create")) return { error: "Недостаточно прав" };
+  const app = await prisma.application.findUnique({ where: { id: applicationId }, include: { client: true } });
+  if (!app) return { error: "Заявка не найдена" };
+  if (app.createdById !== user.id) return { error: "Создатель заявки должен передать её на рассмотрение" };
+  const risk = await evaluateRiskFor(app.client, app);
+  const hardHits = risk.stopFactors.hits.filter(hit => hit.type === "HARD");
+  if (hardHits.length) return { error: `Жёсткий стоп-фактор блокирует сделку: ${hardHits.map(hit => hit.name).join("; ")}` };
+  const route = routeFor(risk.limits.checks.some(check => check.exceeded), risk.stopFactors.hits.some(hit => hit.type === "SOFT"));
+  const systemDate = new Date(await getSystemDate());
+  const result = await prisma.$transaction(async tx => {
+    const claimed = await tx.application.updateMany({ where: { id: applicationId, status: "DRAFT" }, data: { status: "REGISTERED" } });
+    if (!claimed.count) return { error: "Заявка уже в работе" };
+    let deadline = systemDate;
+    for (const step of route) {
+      deadline = addWorkingHours(deadline, step.slaHours);
+      await tx.workflowStep.create({ data: { ...step, applicationId, deadline, status: step.seq === 1 ? "PENDING" : "WAITING" } });
+    }
+    await tx.applicationStatusHistory.create({ data: { applicationId, fromStatus: "DRAFT", toStatus: "REGISTERED", userId: user.id, comment: "Заявка отправлена на рассмотрение" } });
+    await tx.auditLog.create({ data: { userId: user.id, roleCode: role.code, object: "application", objectId: applicationId, operation: "SUBMIT", newValue: String(route.length) } });
+    await tx.notification.create({ data: { userId: user.id, subject: "Заявка в работе", body: `${app.number}: ${route.length} шагов согласования` } });
+    return { ok: true, lessons: [`Маршрут построен: ${route.length} шагов${route === BASE_ROUTE ? "" : " (расширенный)"}`] };
+  });
   revalidatePath(`/applications/${applicationId}`);
-  return { ok: true, lessons };
+  revalidatePath("/committee");
+  revalidatePath("/");
+  return result;
 }
 
 export async function decideStepAction(applicationId: string, stepId: string, decision: "APPROVE" | "REWORK" | "REJECT", comment: string) {
   const role = await requireRole();
   const user = await requireUser();
-  const application = await prisma.application.findUnique({ where: { id: applicationId }, include: { workflowSteps: { orderBy: { seq: "asc" } } } });
+  if (!["APPROVE", "REWORK", "REJECT"].includes(decision)) return { error: "Неизвестное решение" };
+  const application = await prisma.application.findUnique({ where: { id: applicationId }, include: { client: true } });
   if (!application) return { error: "Заявка не найдена" };
-  const step = application.workflowSteps.find((s) => s.id === stepId);
-  if (!step) return { error: "Шаг не найден" };
-  if (step.status !== "PENDING") return { error: "Шаг уже решён" };
-  if (step.roleCode !== role.code) return { error: `Решение по шагу «${step.name}» принимает роль ${step.roleCode}, а не ${role.code}` };
-  if (application.createdById === user.id) return { error: "Maker-Checker: создатель заявки не может согласовывать свой объект" };
+  const risk = await evaluateRiskFor(application.client, application);
+  if (decision === "APPROVE" && risk.stopFactors.hits.some(hit => hit.type === "HARD")) return { error: "Жёсткий стоп-фактор блокирует согласование" };
   if (decision !== "APPROVE" && !comment.trim()) return { error: "Для доработки или отклонения нужен комментарий" };
-
-  const historyComment = comment.trim();
-  if (decision === "APPROVE") {
-    await prisma.workflowStep.update({ where: { id: step.id }, data: { status: "APPROVED", decision, comment: historyComment, decidedById: user.id, decidedAt: new Date() } });
-    const nextIndex = application.workflowSteps.findIndex((s) => s.id === step.id) + 1;
-    const next = application.workflowSteps[nextIndex];
-    if (next) {
-      await prisma.workflowStep.update({ where: { id: next.id }, data: { status: "PENDING" } });
-      await prisma.applicationStatusHistory.create({ data: { applicationId, fromStatus: application.status, toStatus: stepIsCommittee(nextIndex, application.workflowSteps.length) ? "COMMITTEE" : "ANALYSIS", userId: user.id, comment: `Шаг «${step.name}» одобрен, передано: «${next.name}»` } });
-      await prisma.application.update({ where: { id: application.id }, data: { status: stepIsCommittee(nextIndex, application.workflowSteps.length) ? "COMMITTEE" : statusForIndex(nextIndex) } });
-    } else {
-      await prisma.application.update({ where: { id: application.id }, data: { status: "APPROVED" } });
-      await prisma.applicationStatusHistory.create({ data: { applicationId, fromStatus: application.status, toStatus: "APPROVED", userId: user.id, comment: "Маршрут пройден полностью" } });
+  const result = await prisma.$transaction(async tx => {
+    const app = await tx.application.findUniqueOrThrow({ where: { id: applicationId }, include: { workflowSteps: { orderBy: { seq: "asc" } } } });
+    if (!["REGISTERED", "DOCUMENTS", "ANALYSIS", "RISK", "APPROVAL", "COMMITTEE"].includes(app.status)) return { error: "Заявка не находится на согласовании" };
+    if (app.createdById === user.id) return { error: "Maker-Checker: создатель заявки не может согласовывать свой объект" };
+    const step = app.workflowSteps.find(entry => entry.id === stepId);
+    if (!step || step.status !== "PENDING") return { error: "Шаг не активен или уже решён" };
+    if (app.workflowSteps.some(entry => entry.seq < step.seq && !["APPROVED", "DONE"].includes(entry.status))) return { error: "Сначала завершите предыдущие шаги" };
+    if (step.roleCode !== role.code) return { error: `Решение по шагу принимает роль ${step.roleCode}` };
+    if (step.roleCode === "ROLE-14") return { error: "Решение принимается голосованием в разделе «Комитет»" };
+    const overrides = new Set(JSON.parse(app.stopFlags || "[]") as string[]);
+    if (decision === "APPROVE" && step.roleCode === "ROLE-05" && risk.stopFactors.hits.some(hit => hit.type === "SOFT" && !overrides.has(hit.code))) return { error: "Сначала обоснуйте оверрайд мягких стоп-факторов" };
+    const next = app.workflowSteps.find(entry => entry.seq > step.seq);
+    const toStatus = decision === "REJECT" ? "REJECTED" : decision === "REWORK" ? "DOCUMENTS" : next?.roleCode === "ROLE-14" ? "COMMITTEE" : statusForIndex((next?.seq ?? 1) - 1);
+    const now = new Date((await tx.config.findUnique({ where: { id: "system" } }))!.systemDate);
+    await tx.workflowStep.update({ where: { id: step.id }, data: {
+      status: decision === "APPROVE" ? "APPROVED" : decision === "REJECT" ? "REJECTED" : "PENDING",
+      decision, comment: comment.trim(), decidedById: user.id, decidedAt: now,
+    } });
+    if (decision === "APPROVE" && next) {
+      await tx.workflowStep.update({ where: { id: next.id }, data: { status: "PENDING" } });
+      if (next.roleCode === "ROLE-14") await tx.committeeSession.create({ data: { date: now, status: "PLANNED", sessionJson: JSON.stringify([applicationId]) } });
     }
-  } else if (decision === "REWORK") {
-    await prisma.workflowStep.update({ where: { id: step.id }, data: { status: "PENDING", comment: historyComment, decidedById: user.id, decidedAt: new Date(), deadline: addDays(new Date(), 1) } });
-    await prisma.applicationStatusHistory.create({ data: { applicationId, fromStatus: application.status, toStatus: "DOCUMENTS", userId: user.id, comment: `Возврат на доработку: ${historyComment}` } });
-    await prisma.application.update({ where: { id: application.id }, data: { status: "DOCUMENTS" } });
-  } else {
-    await prisma.workflowStep.update({ where: { id: step.id }, data: { status: "REJECTED", decision, comment: historyComment, decidedById: user.id, decidedAt: new Date() } });
-    await prisma.application.update({ where: { id: application.id }, data: { status: "REJECTED" } });
-    await prisma.applicationStatusHistory.create({ data: { applicationId, fromStatus: application.status, toStatus: "REJECTED", userId: user.id, comment: `Отклонено на шаге «${step.name}»: ${historyComment}` } });
-  }
-  await writeAudit({ userId: user.id, roleCode: role.code, object: "application", objectId: application.id, operation: `STEP_${decision}`, newValue: JSON.stringify({ stepId: step.id, stepName: step.name, comment: historyComment }) });
-  revalidatePath("/");
+    if (decision === "REJECT") await tx.workflowStep.updateMany({ where: { applicationId, seq: { gt: step.seq } }, data: { status: "CANCELLED" } });
+    await tx.application.update({ where: { id: applicationId }, data: { status: toStatus } });
+    await tx.applicationStatusHistory.create({ data: { applicationId, fromStatus: app.status, toStatus, userId: user.id, comment: `${step.name}: ${decision}. ${comment.trim()}` } });
+    await tx.auditLog.create({ data: { userId: user.id, roleCode: role.code, object: "application", objectId: applicationId, operation: `STEP_${decision}`, newValue: JSON.stringify({ stepId, comment: comment.trim() }) } });
+    return { ok: true };
+  });
   revalidatePath(`/applications/${applicationId}`);
-  return { ok: true };
-}
-
-function stepIsCommittee(index: number, length: number): boolean {
-  return index === length - 1;
-}
-
-type ActiveSchedule = { lines: (ScheduleLine & { id: string; paidTotal: string; status: string })[] };
-
-function openLinesFor(schedule: ActiveSchedule): OpenScheduleLine[] {
-  return schedule.lines
-    .filter((line) => line.status === "OPEN" || line.status === "PARTIAL")
-    .map((line) => ({ id: line.id, seq: line.seq, dueDate: line.dueDate, principal: line.principal, interest: line.interest, vat: line.vat, commission: line.commission, total: line.total, balance: line.balance }));
-}
-
-function lineRemaining(line: { total: string; paidTotal?: string }): number {
-  return Number(line.total) - Number(line.paidTotal ?? 0);
-}
-
-async function allocateToScheduleLines(schedule: ActiveSchedule, allocations: { scheduleLineId: string; principal: string; interest: string; vat: string; commission: string; penalty?: string }[]): Promise<void> {
-  for (const allocation of allocations) {
-    if (allocation.scheduleLineId === "ADVANCE") continue;
-    const line = schedule.lines.find((entry) => entry.id === allocation.scheduleLineId);
-    if (!line) continue;
-    const added = Number(allocation.principal) + Number(allocation.interest) + Number(allocation.vat) + Number(allocation.commission) + Number(allocation.penalty ?? 0);
-    const cumulative = Number(line.paidTotal ?? 0) + added;
-    const fullyPaid = cumulative >= Number(line.total) - 0.01;
-    await prisma.scheduleLine.update({ where: { id: line.id }, data: { paidTotal: cumulative.toFixed(2), status: fullyPaid ? "PAID" : "PARTIAL" } });
-  }
+  revalidatePath("/committee");
+  revalidatePath("/");
+  return result;
 }
 
 function statusForIndex(index: number): string {
@@ -298,8 +273,11 @@ export async function overrideStopAction(applicationId: string, code: string, co
   const user = await requireUser();
   if (role.code !== "ROLE-05") return { error: "Оверрайд стоп-фактора доступен только руководителю риск-подразделения (ROLE-05)" };
   if (!comment.trim()) return { error: "Комментарий обязателен" };
-  const application = await prisma.application.findUnique({ where: { id: applicationId } });
+  const application = await prisma.application.findUnique({ where: { id: applicationId }, include: { client: true } });
   if (!application) return { error: "Заявка не найдена" };
+  if (["REJECTED", "APPROVED", "CONTRACT", "FUNDED"].includes(application.status)) return { error: "Заявка уже завершена" };
+  const risk = await evaluateRiskFor(application.client, application);
+  if (!risk.stopFactors.hits.some(hit => hit.code === code && hit.type === "SOFT")) return { error: "Можно снять только действующий мягкий стоп-фактор" };
   const flags = JSON.parse(application.stopFlags || "[]") as string[];
   if (!flags.includes(code)) flags.push(code);
   await prisma.application.update({ where: { id: applicationId }, data: { stopFlags: JSON.stringify(flags) } });
@@ -319,14 +297,19 @@ export async function createContractAction(applicationId: string) {
   if (!schedule.length) return { error: "В заявке нет графика платежей — сохраните его в калькуляторе" };
   const existing = await prisma.contract.findUnique({ where: { applicationId } });
   if (existing) return { error: "Договор по этой заявке уже сформирован" };
-  const contractNumber = `ДЛ-${new Date().getFullYear()}-${1000 + Math.floor(Math.random() * 900)}`;
-  const contract = await prisma.contract.create({
+  const systemDate = new Date(await getSystemDate());
+  const client = await prisma.client.findUniqueOrThrow({ where: { id: application.clientId } });
+  const risk = await evaluateRiskFor(client, application);
+  if (risk.stopFactors.hits.some(hit => hit.type === "HARD")) return { error: "Жёсткий стоп-фактор блокирует договор" };
+  const contractNumber = `ДЛ-${systemDate.getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+  const contract = await prisma.$transaction(async tx => {
+  const contract = await tx.contract.create({
     data: {
       number: contractNumber,
       applicationId: application.id,
       clientId: application.clientId,
-      signDate: new Date(),
-      amount: schedule.reduce((sum, line) => sum + Number(line.total), 0).toFixed(2),
+      signDate: systemDate,
+      amount: schedule.reduce((sum, line) => sum.plus(line.total), new Decimal(0)).toFixed(2),
       annualRate: application.annualRate,
       termMonths: application.termMonths,
       status: "ACTIVE",
@@ -334,13 +317,13 @@ export async function createContractAction(applicationId: string) {
     },
     select: { id: true, amount: true },
   });
-  const version = await prisma.paymentSchedule.create({ data: { contractId: contract.id, version: 1, isActive: true, reason: "Первичный график" }, select: { id: true } });
+  const version = await tx.paymentSchedule.create({ data: { contractId: contract.id, version: 1, isActive: true, reason: "Первичный график" }, select: { id: true } });
   for (const line of schedule) {
-    await prisma.scheduleLine.create({
+    await tx.scheduleLine.create({
       data: { scheduleId: version.id, seq: line.seq, dueDate: line.dueDate, principal: line.principal, interest: line.interest, vat: line.vat, commission: line.commission, total: line.total, balance: line.balance, status: "OPEN", paidTotal: "0" },
     });
   }
-  await prisma.asset.create({
+  await tx.asset.create({
     data: {
       contractId: contract.id,
       type: application.product === "Станки" || application.product === "Медицинское оборудование" ? "EQUIPMENT" : "VEHICLE",
@@ -351,71 +334,49 @@ export async function createContractAction(applicationId: string) {
       status: "ORDERED",
     },
   });
-  await prisma.application.update({ where: { id: application.id }, data: { status: "CONTRACT" } });
-  await writeAudit({ userId: user.id, roleCode: role.code, object: "contract", objectId: contract.id, operation: "CREATE", newValue: JSON.stringify({ number: contractNumber, clientId: application.clientId, amount: contract.amount }) });
-  await prisma.notification.create({ data: { userId: user.id, channel: "INAPP", subject: "Договор сформирован", body: `${contractNumber}: проверьте условия и подпишите` } });
+  await tx.application.update({ where: { id: application.id }, data: { status: "CONTRACT" } });
+  await tx.auditLog.create({ data: { userId: user.id, roleCode: role.code, object: "contract", objectId: contract.id, operation: "CREATE", newValue: JSON.stringify({ number: contractNumber, clientId: application.clientId, amount: contract.amount }) } });
+  await tx.notification.create({ data: { userId: user.id, channel: "INAPP", subject: "Договор сформирован", body: `${contractNumber}: проверьте условия и подпишите` } });
+  return contract;
+  });
   revalidatePath("/contracts");
   revalidatePath(`/applications/${applicationId}`);
-  redirect(`/contracts/${contract.id}`);
+  return { ok: true, redirectTo: `/contracts/${contract.id}` };
 }
 
 export async function importBankStatementAction() {
   const role = await requireRole();
   const user = await requireUser();
   if (!can(role.code, "payments", "create")) return { error: "Недостаточно прав" };
-  const filePath = path.join(process.cwd(), "mocks", "bank-statement.csv");
-  const content = readFileSync(filePath, "utf8");
-  const rows = content.split("\n").slice(1).filter((row) => row.trim().length > 0);
-  const contracts = await prisma.contract.findMany({
-    where: { status: "ACTIVE" },
-    include: { paymentSchedules: { where: { isActive: true }, include: { lines: true } } },
-    orderBy: { signDate: "asc" },
+  const rows = readFileSync(path.join(process.cwd(), "mocks", "bank-statement.csv"), "utf8").trim().split(/\r?\n/).slice(1);
+  const result = await prisma.$transaction(async tx => {
+    let imported = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    for (const row of rows) {
+      const [externalId, dateStr, amountStr, contractNumber, currency] = row.split(",").map(cell => cell.trim());
+      const amount = paymentAmount(amountStr ?? "");
+      if (!externalId || !amount || currency !== "KZT" || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr ?? "") || !Number.isFinite(Date.parse(dateStr)) || new Date(dateStr).toISOString().slice(0, 10) !== dateStr) {
+        errors.push(`${externalId || "Строка"}: неверные данные выписки`); continue;
+      }
+      const contract = await tx.contract.findUnique({ where: { number: contractNumber || "" } });
+      if (!contract) { errors.push(`${externalId}: договор ${contractNumber} не найден`); continue; }
+      const saved = await recordPayment(tx, { contractId: contract.id, amount, date: new Date(dateStr), source: "BANK", externalId, userId: user.id, roleCode: role.code });
+      if (saved.error) errors.push(`${externalId}: ${saved.error}`);
+      else if (saved.duplicate) skipped++;
+      else imported++;
+    }
+    return { ok: true, imported, allocated: imported, skipped, errors };
   });
-  let imported = 0;
-  let allocated = 0;
-  for (const row of rows) {
-    const [externalId, dateStr, amountStr] = row.split(",").map((cell) => cell.trim());
-    if (!externalId || !dateStr || !amountStr) continue;
-    const existing = await prisma.payment.findFirst({ where: { externalId } });
-    if (existing) continue;
-    const candidate = contracts.find((contract) => {
-      const schedule = contract.paymentSchedules[0];
-      if (!schedule) return false;
-      const open = openLinesFor(schedule);
-      return open.reduce((sum, line) => sum + lineRemaining(line), 0) >= Number(amountStr);
-    });
-    const contract = candidate ?? contracts.find((entry) => entry.paymentSchedules[0]?.lines.some((line) => line.status === "OPEN" || line.status === "PARTIAL")) ?? contracts[0];
-    if (!contract) continue;
-    const schedule = contract.paymentSchedules[0];
-    if (!schedule) continue;
-    const openLines = openLinesFor(schedule);
-    const allocations = openLines.length ? allocatePayment(amountStr, openLines) : [];
-    const payment = await prisma.payment.create({
-      data: {
-        contractId: contract.id,
-        date: new Date(dateStr),
-        amount: amountStr,
-        source: "BANK",
-        externalId,
-        allocations: JSON.stringify(allocations),
-      },
-      select: { id: true },
-    });
-    await allocateToScheduleLines(schedule, allocations);
-    if (allocations.length) allocated += 1;
-    await writeAudit({ userId: user.id, roleCode: role.code, object: "contract", objectId: contract.id, operation: "PAYMENT_IMPORT", newValue: JSON.stringify({ amount: amountStr, externalId, reference: payment.id }) });
-    imported += 1;
-  }
-  await writeAudit({ userId: user.id, roleCode: role.code, object: "payment", objectId: "statement", operation: "IMPORT_BANK", newValue: JSON.stringify({ imported, allocated }) });
-  revalidatePath("/payments");
-  return { ok: true, imported, allocated };
+  revalidatePath("/", "layout");
+  return result;
 }
 
 export async function simulateTimeAction(days: number) {
   const role = await requireRole();
   const user = await requireUser();
   if (!can(role.code, "admin", "view")) return { error: "Симуляция времени доступна системному администратору" };
-  if (!Number.isFinite(days) || days <= 0 || days > 3660) return { error: "Некорректное число дней (1–3660)" };
+  if (!Number.isInteger(days) || days <= 0 || days > 3660) return { error: "Некорректное число дней (1–3660)" };
   const systemDate = await getSystemDate();
   const nextDate = addDays(new Date(systemDate), days);
   await prisma.config.update({ where: { id: "system" }, data: { systemDate: nextDate.toISOString() } });
@@ -427,19 +388,43 @@ export async function simulateTimeAction(days: number) {
 export async function voteAction(applicationId: string, vote: "FOR" | "AGAINST" | "ABSTAIN", comment: string) {
   const role = await requireRole();
   const user = await requireUser();
-  if (!can(role.code, "committee", "approve")) return { error: "Голосовать может только член кредитного комитета" };
-  const session = await prisma.committeeSession.findFirst({ where: { status: "PLANNED" }, orderBy: { createdAt: "desc" } });
-  if (!session) return { error: "Активное заседание комитета не найдено" };
-  const appIds = JSON.parse(session.sessionJson || "[]") as string[];
-  if (!appIds.includes(applicationId)) return { error: "Заявка не в повестке заседания" };
-  await prisma.committeeVote.upsert({
-    where: { sessionId_applicationId_userId: { sessionId: session.id, applicationId, userId: user.id } },
-    update: { vote, comment: comment.trim() },
-    create: { sessionId: session.id, applicationId, userId: user.id, vote, comment: comment.trim() },
+  if (!["ROLE-14", "ROLE-15", "ROLE-02"].includes(role.code)) return { error: "Голосовать может только член демо-комитета" };
+  if (!["FOR", "AGAINST", "ABSTAIN"].includes(vote)) return { error: "Неизвестный голос" };
+  const app = await prisma.application.findUnique({ where: { id: applicationId }, include: { client: true } });
+  if (!app) return { error: "Заявка не найдена" };
+  const risk = await evaluateRiskFor(app.client, app);
+  if (vote === "FOR" && risk.stopFactors.hits.some(hit => hit.type === "HARD" || !JSON.parse(app.stopFlags || "[]").includes(hit.code))) return { error: "Есть неустранённые стоп-факторы" };
+  const result = await prisma.$transaction(async tx => {
+    const application = await tx.application.findUniqueOrThrow({ where: { id: applicationId } });
+    if (application.status !== "COMMITTEE") return { error: "Заявка не ожидает решения комитета" };
+    if (application.createdById === user.id) return { error: "Maker-Checker: автор не голосует по своей заявке" };
+    const sessions = await tx.committeeSession.findMany({ where: { status: "PLANNED" }, orderBy: { createdAt: "desc" } });
+    const session = sessions.find(entry => JSON.parse(entry.sessionJson).includes(applicationId));
+    if (!session) return { error: "Заявка не включена в повестку" };
+    const existing = await tx.committeeVote.findUnique({ where: { sessionId_applicationId_userId: { sessionId: session.id, applicationId, userId: user.id } } });
+    if (existing) return { error: "Ваш голос уже учтён" };
+    await tx.committeeVote.create({ data: { sessionId: session.id, applicationId, userId: user.id, vote, comment: comment.trim() } });
+    const votes = await tx.committeeVote.findMany({ where: { sessionId: session.id, applicationId }, include: { user: true } });
+    const eligible = votes.filter(entry => ["ROLE-14", "ROLE-15", "ROLE-02"].includes(entry.user.roleCode));
+    const forCount = new Set(eligible.filter(entry => entry.vote === "FOR").map(entry => entry.user.roleCode)).size;
+    const againstCount = new Set(eligible.filter(entry => entry.vote === "AGAINST").map(entry => entry.user.roleCode)).size;
+    const allVoted = new Set(eligible.map(entry => entry.user.roleCode)).size === 3;
+    const status = forCount >= 2 ? "APPROVED" : againstCount >= 2 || allVoted ? "REJECTED" : null;
+    await tx.auditLog.create({ data: { userId: user.id, roleCode: role.code, object: "committee", objectId: session.id, operation: "VOTE", newValue: JSON.stringify({ applicationId, vote }) } });
+    if (status) {
+      await tx.application.update({ where: { id: applicationId }, data: { status } });
+      await tx.workflowStep.updateMany({ where: { applicationId, roleCode: "ROLE-14", status: "PENDING" }, data: { status, decision: status === "APPROVED" ? "APPROVE" : "REJECT", decidedById: user.id, decidedAt: new Date(), comment: "Решение демо-комитета: 2 из 3; без большинства после трёх голосов — отказ" } });
+      await tx.applicationStatusHistory.create({ data: { applicationId, fromStatus: "COMMITTEE", toStatus: status, userId: user.id, comment: "Решение демо-комитета" } });
+      await tx.auditLog.create({ data: { userId: user.id, roleCode: role.code, object: "application", objectId: applicationId, operation: "COMMITTEE_DECISION", newValue: status } });
+      const pending = await tx.application.count({ where: { id: { in: JSON.parse(session.sessionJson) }, status: "COMMITTEE" } });
+      if (!pending) await tx.committeeSession.update({ where: { id: session.id }, data: { status: "CLOSED" } });
+    }
+    return { ok: true };
   });
-  await writeAudit({ userId: user.id, roleCode: role.code, object: "committee", objectId: session.id, operation: "VOTE", newValue: JSON.stringify({ applicationId, vote }) });
+  revalidatePath(`/applications/${applicationId}`);
   revalidatePath("/committee");
-  return { ok: true };
+  revalidatePath("/");
+  return result;
 }
 
 export async function signContractMockAction(contractId: string) {
@@ -448,7 +433,7 @@ export async function signContractMockAction(contractId: string) {
   const contract = await prisma.contract.findUnique({ where: { id: contractId } });
   if (!contract) return { error: "Договор не найден" };
   if (!can(role.code, "contracts", "sign")) return { error: "Нет права подписывать договор" };
-  const signedAt = new Date().toISOString();
+  const signedAt = await getSystemDate();
   const content = JSON.stringify({ number: contract.number, applicationId: contract.applicationId, clientId: contract.clientId, amount: contract.amount, annualRate: contract.annualRate, termMonths: contract.termMonths, schedule: contract.scheduleJson });
   const hash = `sha256:${createHash("sha256").update(content).digest("hex")}`;
   const certificateFingerprint = createHash("sha256").update(`DEMO-NUC-RK:${user.id}`).digest("hex").match(/.{1,2}/g)?.join(":").toUpperCase() ?? "";
@@ -458,25 +443,21 @@ export async function signContractMockAction(contractId: string) {
   return { ok: true };
 }
 
-export async function createPaymentAction(contractId: string, amount: string) {
+export async function createPaymentAction(contractId: string, amount: string, requestId?: string) {
   const role = await requireRole();
   const user = await requireUser();
-  if (!can(role.code, "payments", "create") && !can(role.code, "contracts", "create")) return { error: "Нет доступа к зачислению платежей" };
-  const parsed = new Decimal(amount);
-  if (!parsed.isFinite() || parsed.lte(0)) return { error: "Сумма платежа должна быть больше нуля" };
-  const contract = await prisma.contract.findUnique({
-    where: { id: contractId },
-    include: { paymentSchedules: { where: { isActive: true }, include: { lines: true } } },
-  });
-  if (!contract) return { error: "Договор не найден" };
-  const schedule = contract.paymentSchedules[0];
-  if (!schedule) return { error: "У договора нет активного графика" };
-  const openLines = openLinesFor(schedule);
-  const allocations = allocatePayment(parsed.toFixed(2), openLines);
-  const payment = await prisma.payment.create({ data: { contractId, date: new Date(await getSystemDate()), amount: parsed.toFixed(2), source: "MANUAL", externalId: null, allocations: JSON.stringify(allocations) } });
-  await allocateToScheduleLines(schedule, allocations);
-  const allocatedTotal = allocations.reduce((sum, allocation) => sum + Number(allocation.principal) + Number(allocation.interest) + Number(allocation.vat) + Number(allocation.commission) + Number(allocation.penalty ?? 0), 0);
-  await writeAudit({ userId: user.id, roleCode: role.code, object: "contract", objectId: contractId, operation: "PAYMENT_CREATE", newValue: JSON.stringify({ amount: parsed.toFixed(2), allocated: allocatedTotal.toFixed(2), reference: payment.id }) });
+  if (!can(role.code, "payments", "create")) return { error: "Нет доступа к зачислению платежей" };
+  const parsed = paymentAmount(amount);
+  if (!parsed) return { error: "Введите положительную сумму с точностью до двух знаков" };
+  const paymentDate = new Date(await getSystemDate());
+  const result = await prisma.$transaction(tx => recordPayment(tx, {
+    contractId, amount: parsed, date: paymentDate, source: "MANUAL",
+    externalId: requestId ? `MANUAL:${contractId}:${requestId}` : undefined,
+    userId: user.id, roleCode: role.code,
+  }));
   revalidatePath(`/contracts/${contractId}`);
-  return { ok: true };
+  revalidatePath("/payments");
+  revalidatePath("/overdue");
+  revalidatePath("/");
+  return result.duplicate ? { ok: true } : result;
 }

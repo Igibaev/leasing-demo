@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { completeAction } from "@/lib/client-navigation";
 import { signContractMockAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 
 export function MockSignButton({ contractId }: { contractId: string }) {
+  const [, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
@@ -13,13 +15,19 @@ export function MockSignButton({ contractId }: { contractId: string }) {
       <Button
         variant="success"
         disabled={busy}
-        onClick={async () => {
+        onClick={() => startTransition(async () => {
           setBusy(true);
           setError(null);
-          const result = await signContractMockAction(contractId);
-          if (result && "error" in result && result.error) setError(result.error);
-          setBusy(false);
-        }}
+          try {
+            const result = await signContractMockAction(contractId);
+    if (result && "ok" in result) completeAction("Демонстрационная подпись сохранена.");
+            if (result && "error" in result && result.error) setError(result.error);
+          } catch {
+            setError("Не удалось выполнить действие. Проверьте соединение и повторите.");
+          } finally {
+            setBusy(false);
+          }
+        })}
       >
         {busy ? "Подписываю..." : "Подписать ЭЦП"}
       </Button>

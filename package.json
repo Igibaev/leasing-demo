@@ -9,11 +9,15 @@
     "lint": "eslint app components lib prisma tests e2e --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts",
-    "db:reset": "prisma migrate reset --force",
-    "postinstall": "prisma generate"
+    "test:e2e": "node scripts/database.mjs test",
+    "db:reset": "node scripts/database.mjs reset",
+    "postinstall": "prisma generate",
+    "db:setup": "node scripts/database.mjs setup",
+    "test:browser": "node scripts/database.mjs browser"
   },
-  "prisma": { "seed": "tsx prisma/seed.ts" },
+  "prisma": {
+    "seed": "node --import tsx prisma/seed.ts"
+  },
   "dependencies": {
     "@prisma/client": "^6.19.0",
     "@radix-ui/react-slot": "^1.2.3",
@@ -36,11 +40,15 @@
     "autoprefixer": "^10.4.21",
     "eslint": "^9.25.0",
     "eslint-config-next": "^15.5.12",
+    "playwright": "^1.63.0",
     "postcss": "^8.5.3",
     "prisma": "^6.19.0",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",
     "vitest": "^3.1.1"
+  },
+  "engines": {
+    "node": ">=22 <25"
   }
 }

@@ -78,7 +78,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
   const pendingStep = app.workflowSteps.find((step) => step.status === "PENDING") ?? null;
   const stopHits = risk.stopFactors.hits.filter((factor) => !factor.overridden);
 
-  const canDecide = pendingStep !== null && pendingStep.roleCode === session.code && app.createdById !== user.id && can(session.code, "applications", "approve");
+  const canDecide = !["APPROVED", "REJECTED", "CONTRACT", "FUNDED"].includes(app.status) && pendingStep !== null && pendingStep.roleCode !== "ROLE-14" && pendingStep.roleCode === session.code && app.createdById !== user.id && can(session.code, "applications", "approve");
   const isCreator = app.createdById === user.id;
   const hardHits = stopHits.filter((factor) => factor.type === "HARD");
   const softHits = stopHits.filter((factor) => factor.type === "SOFT");
@@ -130,7 +130,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
           <CardBody>
             <ol className="flex flex-wrap items-center gap-y-3 text-xs">
               {app.workflowSteps.map((step, index) => {
-                const stateVariant = step.status === "DONE" ? "done" : step.status === "PENDING" ? "pending" : step.status === "ACTIVE" ? "active" : "void";
+                const stateVariant = ["DONE", "APPROVED"].includes(step.status) ? "done" : step.status === "PENDING" ? "pending" : step.status === "ACTIVE" ? "active" : "void";
                 const sla = slaLabel(step.deadline, new Date(systemDate));
                 return (
                   <li key={step.id} className="flex items-center">
@@ -144,7 +144,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
                       </div>
                       <span className="whitespace-nowrap font-medium text-slate-700">{step.name}</span>
                       <span className="whitespace-nowrap text-[10px] text-slate-400">{getRole(step.roleCode).name}</span>
-                      <span className={`whitespace-nowrap text-[10px] ${sla.overdue ? "font-semibold text-red-600" : "text-slate-500"}`}>{formatDate(step.deadline)} · {sla.label}</span>
+                      <span className={`whitespace-nowrap text-[10px] ${sla.overdue ? "font-semibold text-red-600" : "text-slate-500"}`}>{["DONE", "APPROVED"].includes(step.status) ? "Согласовано" : step.status === "WAITING" ? "Ожидает предыдущий шаг" : `${formatDate(step.deadline)} · ${sla.label}`}</span>
                     </div>
                     {index < app.workflowSteps.length - 1 ? <div className="mx-1 mb-6 h-px w-8 bg-slate-300" /> : null}
                   </li>
@@ -195,7 +195,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
                 <tr key={factor.code}>
                   <Td>{factor.name}</Td>
                   <Td className="text-xs">{factor.type === "HARD" ? "жёсткий" : "мягкий"}</Td>
-                  <Td>{factor.overridden ? <Badge variant="amber">оверрайд</Badge> : factor.type === "HARD" ? <Badge variant="red">задет</Badge> : <Badge variant="red">задет</Badge>}</Td>
+                  <Td>{factor.overridden || overriddenCodes.has(factor.code) ? <Badge variant="amber">оверрайд</Badge> : factor.type === "HARD" ? <Badge variant="red">задет</Badge> : <Badge variant="red">задет</Badge>}</Td>
                   <Td className="text-xs">{factor.type === "SOFT" && overriddenCodes.has(factor.code) ? "снят руководителем рисков" : "—"}</Td>
                 </tr>
               ))}
@@ -230,7 +230,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
             {profitability ? (
               <CardBody className="grid grid-cols-3 gap-3">
                 <div className="rounded-md bg-slate-50 px-3 py-2 text-center">
-                  <div className="text-lg font-bold text-slate-900">{(Number(profitability.irr) * 100).toFixed(2)}%</div>
+                  <div className="text-lg font-bold text-slate-900">{Number(profitability.irr).toFixed(2)}%</div>
                   <div className="text-[10px] uppercase text-slate-400">IRR годовых</div>
                 </div>
                 <div className="rounded-md bg-slate-50 px-3 py-2 text-center">
@@ -252,8 +252,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
                 <li key={doc.id} className="flex items-center justify-between px-4 py-2">
                   <span className="text-slate-700">{doc.name}</span>
                   <div className="flex gap-2 text-xs">
-                    <Button type="submit" variant="outline" size="sm">Открыть</Button>
-                    <Button type="submit" variant="ghost" size="sm">Загрузить</Button>
+                    <span className="text-slate-400">Образец перечня · файл не подключён</span>
                   </div>
                 </li>
               ))}
@@ -272,6 +271,11 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
             </Card>
           ) : null}
 
+          {app.status === "COMMITTEE" ? <Card><CardBody>
+            <p className="text-sm">Ожидается решение демо-комитета: два голоса «за» из трёх.</p>
+            {can(session.code, "committee", "view") ? <Link href="/committee" className="text-blue-700 underline">Перейти к голосованию</Link> : <p className="text-xs text-slate-500">Выберите роль «Член кредитного комитета», «Руководство» или «Руководитель продаж».</p>}
+          </CardBody></Card> : null}
+
           {pendingStep && canDecide ? (
             <Card className="border-blue-200">
               <CardHeader title={pendingStep.name} subtitle={`Ваша роль: ${session.name}. Создатель заявки не согласует собственный объект (Maker-Checker).`} />
@@ -283,7 +287,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
 
           {pendingStep && pendingStep.roleCode === session.code && app.createdById !== user.id && hardHits.length === 0 && firstOverrideCode && session.code === "ROLE-05" ? (
             <Card className="border-amber-200">
-              <CardHeader title="Руководитель рисков: оверрайд" subtitle="мягкие стоп-факторы блокируют передачу следующих шагов" />
+              <CardHeader title="Руководитель рисков: оверрайд" subtitle="Перед согласованием руководителем рисков требуется обоснование" />
               <CardBody>
                 <div className="mb-2 text-xs text-slate-500">Задето: {overridableSoft.map((factor) => factor.name).join("; ")}</div>
                 <OverrideForm applicationId={app.id} code={firstOverrideCode} />

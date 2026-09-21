@@ -1,15 +1,28 @@
 "use client";
 
-import { useActionState } from "react";
+import { useState } from "react";
+import { completeAction } from "@/lib/client-navigation";
 import { createClientAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/form";
 
 export function ClientForm() {
-  const [state, formAction, pending] = useActionState(createClientAction, null);
-  const error = state && "error" in state && state.error ? state.error : null;
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   return (
-    <form action={formAction} className="space-y-4">
+    <form onSubmit={async (event) => {
+      event.preventDefault();
+      if (pending) return;
+      const data = new FormData(event.currentTarget);
+      setPending(true);
+      setError(null);
+      try {
+        const result = await createClientAction(null, data);
+        if (result.redirectTo) completeAction(undefined, result.redirectTo);
+        else setError(result.error ?? "Не удалось сохранить данные");
+      } catch { setError("Не удалось сохранить данные. Повторите попытку."); }
+      finally { setPending(false); }
+    }} className="space-y-4">
       {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
       <div className="grid grid-cols-2 gap-4">
         <Field label="Тип клиента">
@@ -19,7 +32,7 @@ export function ClientForm() {
             <option value="INDIVIDUAL">Физическое лицо</option>
           </Select>
         </Field>
-        <Field label="БИН / ИИН (12 знаков)" hint="проверка контрольной суммы и дублей">
+        <Field label="БИН / ИИН (12 знаков)" hint="12 цифр; проверка дублей">
           <Input name="binIin" required maxLength={12} minLength={12} pattern="\d{12}" />
         </Field>
         <Field label="Наименование / ФИО">

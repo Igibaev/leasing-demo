@@ -1,3 +1,5 @@
+import Decimal from "decimal.js";
+import { remainingLine } from "@/lib/payment-balance";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
@@ -40,7 +42,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
   const paidLines = lines.filter((line) => line.status === "PAID").length;
   const remainingPrincipal = lines
     .filter((line) => line.status === "OPEN" || line.status === "PARTIAL")
-    .reduce((sum, line) => sum + Number(line.principal) - Number(line.paidTotal ?? 0) * Number(line.principal) / Math.max(Number(line.total), 1), 0);
+    .reduce((sum, line) => sum.plus(remainingLine(line).principal), new Decimal(0)).toFixed(2);
   const signature = signatureAudit?.newValue ? JSON.parse(signatureAudit.newValue) as { signer: string; certificate: string; certificateFingerprint: string; hash: string } : null;
   const signedContent = JSON.stringify({ number: contract.number, applicationId: contract.applicationId, clientId: contract.clientId, amount: contract.amount, annualRate: contract.annualRate, termMonths: contract.termMonths, schedule: contract.scheduleJson });
   const currentHash = `sha256:${createHash("sha256").update(signedContent).digest("hex")}`;
@@ -56,7 +58,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
             <Badge variant="outline">{activeSchedule?.version ?? allSchedules[0]?.version ?? "-"}. версия графика</Badge>
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            {contract.application.client.name} · {contract.application.product} · сумма {moneyKzt(contract.amount)} · {contract.termMonths} мес. · {contract.annualRate}% годовых · подписан {formatDate(contract.signDate)}
+            {contract.application.client.name} · {contract.application.product} · сумма {moneyKzt(contract.amount)} · {contract.termMonths} мес. · {contract.annualRate}% годовых · создан {formatDate(contract.signDate)}
           </p>
         </div>
       </div>

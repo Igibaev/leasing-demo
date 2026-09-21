@@ -1,3 +1,4 @@
+import Decimal from "decimal.js";
 import { calculateSchedule, type ScheduleLine } from "./calc";
 import { addDays, dateParam } from "./datetime";
 
@@ -12,7 +13,7 @@ export interface ApplicationScheduleParams {
 const COMMISSION_RATE = 0.006;
 
 export function buildScheduleForApplication(application: ApplicationScheduleParams, firstPaymentDate: string = dateParam(addDays(new Date(), 30))): ScheduleLine[] {
-  const commission = (Number(application.assetCost) * COMMISSION_RATE).toFixed(2);
+  const commission = new Decimal(application.assetCost).times(COMMISSION_RATE).toFixed(2);
   return calculateSchedule({
     assetCost: application.assetCost,
     downPayment: application.downPayment,

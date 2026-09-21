@@ -53,6 +53,7 @@ export async function createWorkflowForApplication(applicationId: string, route:
         slaHours: step.slaHours,
         deadline,
         decidedById: null,
+        status: step.seq === 1 ? "PENDING" : "WAITING",
       },
     });
   }

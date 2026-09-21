@@ -4,9 +4,10 @@ import { dateParam, addMonths, addDays } from "../lib/datetime";
 import { calculateScoring, DEFAULT_SCORING_MODEL } from "../lib/rules";
 import { factsFor } from "../lib/scoring";
 import { ALL_ROLES } from "../lib/roles";
+import { buildScheduleForApplication } from "../lib/schedule";
 import { createHash } from "crypto";
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient(process.env.LEASING_DATABASE_URL ? { datasourceUrl: process.env.LEASING_DATABASE_URL } : undefined);
 
 function mulberry32(seed: number) {
   let a = seed;
@@ -173,9 +174,9 @@ interface ContractSeed {
 }
 
 async function main() {
-  const today = new Date();
-  const systemDate = new Date();
-  systemDate.setHours(12, 0, 0, 0);
+  const today = new Date("2026-09-21T12:00:00.000Z");
+  const systemDate = new Date(today);
+  systemDate.setUTCHours(12, 0, 0, 0);
 
   await prisma.config.upsert({
     where: { id: "system" },
@@ -216,10 +217,10 @@ async function main() {
   const users: { id: string; roleCode: string }[] = [];
   for (const seed of userSeeds) {
     const user = await prisma.user.upsert({
-      where: { email: `${seed.code.toLowerCase()}-${seed.name.split(" ")[0]!.toLowerCase()}@leasing.kz` },
+      where: { email: `${seed.code.toLowerCase()}-${seed.name.split(" ")[0]!.toLowerCase()}@example.invalid` },
       update: {},
       create: {
-        email: `${seed.code.toLowerCase()}-${seed.name.split(" ")[0]!.toLowerCase()}@leasing.kz`,
+        email: `${seed.code.toLowerCase()}-${seed.name.split(" ")[0]!.toLowerCase()}@example.invalid`,
         name: seed.name,
         roleCode: seed.code,
       },
@@ -265,8 +266,8 @@ async function main() {
         oked: seedc.oked,
         status: "ACTIVE",
         address: `${pick(CITIES)}, ${pick(STREETS)} ${intBetween(1, 180)}`,
-        phone: `+7 7${intBetween(100, 999)} ${intBetween(100, 999)} ${intBetween(10, 99)} ${intBetween(10, 99)}`,
-        email: `info@${seedc.name.toLowerCase().replace(/[^a-zа-я0-9]/g, "")}.kz`,
+        phone: "+7 000 000 00 00",
+        email: `info@${seedc.name.toLowerCase().replace(/[^a-zа-я0-9]/g, "")}.example.invalid`,
         groupId: seedc.group ?? null,
         ewsColor: ewsFor(index),
         ewsReason: "",
@@ -617,30 +618,8 @@ async function main() {
   }
 
   const committeeApps = apps.filter((app) => app.status === "COMMITTEE").slice(0, 2);
-  const committeeMembers = ["ROLE-14", "ROLE-15", "ROLE-02"].map((code) => userFor(code));
   if (committeeApps.length > 0) {
-    const session = await prisma.committeeSession.create({
-      data: {
-        date: addDays(systemDate, 1),
-        status: "PLANNED",
-        sessionJson: JSON.stringify(committeeApps.map((app) => app.id)),
-      },
-      select: { id: true },
-    });
-    for (const memberId of committeeMembers) {
-      for (const app of committeeApps) {
-        if (rand() > 0.5) continue;
-        await prisma.committeeVote.create({
-          data: {
-            sessionId: session.id,
-            applicationId: app.id,
-            userId: memberId,
-            vote: pick(["FOR", "AGAINST", "ABSTAIN"]),
-            comment: "",
-          },
-        });
-      }
-    }
+    await prisma.committeeSession.create({ data: { date: systemDate, status: "PLANNED", sessionJson: JSON.stringify(committeeApps.map(app => app.id)) } });
   }
 
   const statusHistoryTargets = apps.filter((app) => ["ANALYSIS", "RISK", "APPROVAL", "COMMITTEE"].includes(app.status));
@@ -668,7 +647,31 @@ async function main() {
     });
   }
 
-  console.log(`Seed OK: roles=${ALL_ROLES.length} users=${userSeeds.length} clients=${clientIds.length} suppliers=${SUPPLIERS.length} applications=${apps.length} contracts=${contractSeeds.length}`);
+  // Stable, fictional fixtures for the presenter and regression tests.
+  const demoClient = await prisma.client.create({ data: {
+    name: "ТОО ДЕМО — Учебная логистика", clientType: "LEGAL", binIin: "000000000001",
+    registrationDate: "2018-01-01", oked: "49410", address: "Демонстрационный адрес",
+    phone: "+7 000 000 00 00", email: "demo@example.invalid", ewsColor: "GREEN", riskRating: "B",
+    financeJson: JSON.stringify({ ebitdaMargin: 20, debtEbitda: 1, currentRatio: 2 }),
+  } });
+  const params = { assetCost: "60000000", downPayment: "12000000", termMonths: 12, annualRate: "18", scheduleType: "ANNUITY" };
+  const demoApp = await prisma.application.create({ data: {
+    ...params, number: "Z-DEMO-001", clientId: demoClient.id, product: "Грузовой транспорт", financedAmount: "48000000.00",
+    createdById: userFor("ROLE-01"), status: "DRAFT", scheduleJson: JSON.stringify(buildScheduleForApplication(params, "2026-10-21")),
+  } });
+  const paymentParams = { ...params, assetCost: "1000000", downPayment: "200000" };
+  const paymentLines = buildScheduleForApplication(paymentParams, "2026-08-21");
+  const funded = await prisma.application.create({ data: {
+    ...paymentParams, number: "Z-DEMO-PAY", clientId: demoClient.id, product: "Грузовой транспорт", financedAmount: "800000.00",
+    createdById: userFor("ROLE-01"), status: "CONTRACT", scheduleJson: JSON.stringify(paymentLines),
+  } });
+  await prisma.contract.create({ data: {
+    number: "ДЛ-DEMO-001", applicationId: funded.id, clientId: demoClient.id, signDate: new Date("2026-07-21T12:00:00Z"),
+    amount: paymentLines.reduce((sum, line) => sum + Number(line.total), 0).toFixed(2), annualRate: "18", termMonths: 12,
+    scheduleJson: JSON.stringify(paymentLines), paymentSchedules: { create: { version: 1, isActive: true, lines: { create: paymentLines } } },
+  } });
+  console.log(`Demo fixtures: ${demoApp.number}, ДЛ-DEMO-001; all identities are fictional`);
+  console.log(`Seed OK: roles=${ALL_ROLES.length} users=${userSeeds.length} clients=${clientIds.length + 1} suppliers=${SUPPLIERS.length} applications=${apps.length + 2} contracts=${contractSeeds.length + 1}`);
 }
 
 main()

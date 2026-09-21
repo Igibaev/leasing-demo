@@ -6,7 +6,6 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, Td } from "@/components/ui/table";
 import { moneyKzt } from "@/lib/money";
-import { formatDate } from "@/lib/datetime";
 import { evaluateRisk } from "@/lib/scoring";
 import { CommitteeVote } from "@/components/committee-vote";
 
@@ -20,7 +19,7 @@ export default async function CommitteePage() {
   const sessions = await prisma.committeeSession.findMany({
     include: { votes: { select: { applicationId: true, userId: true, vote: true } } },
     orderBy: { date: "desc" },
-    take: 3,
+    where: { status: "PLANNED" },
   });
 
   const rows: {
@@ -30,6 +29,7 @@ export default async function CommitteePage() {
     votes: { userId: string; vote: string }[];
     risk: { score: string; rating: string; stopHits: number; route: string };
     myVote: string | null;
+    status: string;
   }[] = [];
 
   for (const sessionRow of sessions) {
@@ -51,6 +51,7 @@ export default async function CommitteePage() {
       ]);
       rows.push({
         sessionId: sessionRow.id,
+        status: application.status,
         applicationId,
         application: { id: application.id, number: application.number, client: { name: application.client.name }, financedAmount: application.financedAmount, riskRating: application.riskRating },
         votes,
@@ -64,12 +65,12 @@ export default async function CommitteePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-slate-900">Решение кредитного комитета</h1>
-        <p className="text-sm text-slate-500">Каждый член комитета голосует один раз; итог и протокол фиксируются в журнале аудита.</p>
+        <p className="text-sm text-slate-500">Демо-правило: руководитель продаж, член комитета и руководство. Два голоса «за» — одобрение; два «против» или отсутствие большинства после трёх голосов — отказ.</p>
       </div>
       {sessions.length === 0 ? <Card><CardBody className="py-8 text-center text-sm text-slate-400">Сессий комитета пока нет.</CardBody></Card> : null}
       {rows.length > 0 ? (
         <Card>
-          <CardHeader title={`Повестка заседания ${formatDate(sessions[0]?.date)}`} subtitle="RISK-профиль пересчитан на текущую дату" />
+          <CardHeader title="Повестки открытых демо-заседаний" subtitle="RISK-профиль пересчитан на текущую дату" />
           <Table headers={["Номер", "Клиент", "Сделка", "Рейтинг", "Маршрут", "Профиль риска", "Текущий счёт голосов", "Ваше голосование"]}>
             {rows.map((row) => (
               <tr key={`${row.sessionId}-${row.applicationId}`}>
@@ -85,7 +86,7 @@ export default async function CommitteePage() {
                   {row.votes.length === 0 ? <span className="text-slate-300">—</span> : null}
                   {row.votes.map((vote) => (vote.vote === "FOR" ? "＋" : vote.vote === "ABSTAIN" ? "·" : "−")).join(" ")}
                 </Td>
-                <Td><CommitteeVote applicationId={row.applicationId} myVote={row.myVote} /></Td>
+                <Td>{row.status === "COMMITTEE" && can(role.code, "committee", "approve") ? <CommitteeVote applicationId={row.applicationId} myVote={row.myVote} /> : <span className="text-xs">{row.status === "APPROVED" ? "Одобрено" : row.status === "REJECTED" ? "Отказ" : "Только просмотр"}</span>}</Td>
               </tr>
             ))}
           </Table>

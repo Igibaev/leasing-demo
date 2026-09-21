@@ -21,3 +21,5 @@ yarn-error.log*
 # env
 .env*
 !.env.example
+# local verification screenshots
+/.demo-artifacts/

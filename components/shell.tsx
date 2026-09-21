@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ActionFeedback } from "./action-feedback";
 import { getSessionUser } from "@/lib/auth";
 import { getRole, menuFor } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
@@ -99,9 +100,9 @@ export async function Shell({ children, currentPath }: { children: React.ReactNo
           })}
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-6"><ActionFeedback />{children}</main>
       <footer className="mx-auto max-w-7xl px-4 pb-8 text-[10px] text-slate-400">
-        Прототип АИС «Лизинг» · моковые данные и ЭЦП · расчёты через decimal.js · аудит без возможности удаления
+        Прототип АИС «Лизинг» · моковые данные и ЭЦП · журнал действий
       </footer>
     </div>
   );

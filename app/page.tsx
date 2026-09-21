@@ -82,7 +82,7 @@ export default async function DashboardPage() {
 
       {tasks.length > 0 ? (
         <Card>
-          <CardHeader title="Задачи согласования" subtitle="SLA считается в рабочих часах по календарю РК" />
+          <CardHeader title="Задачи согласования" subtitle="Демо-SLA: укрупнённые рабочие дни, без праздничного календаря" />
           <Table headers={["Заявка", "Клиент", "Шаг маршрута", "Срок", "SLA", "Статус заявки", ""]}>
             {tasks.map((task) => {
               const sla = slaLabel(task.deadline, new Date(systemDate));
