@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Границы</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&amp;display=swap">
+<style>
+body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #F5F6F8; color: #101828; }
+a { color: #0F6E6B; } a:hover { color: #0A5250; }
+</style>
+</helmet>
+<div style="width: 1280px; height: 720px; box-sizing: border-box; background: #F5F6F8; padding: 56px 64px; display: flex; flex-direction: column; gap: 30px;">
+
+  <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 32px;">
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: center; gap: 20px;">
+        <div style="width: 48px; height: 3px; background: #0F6E6B;"></div>
+        <div style="font-size: 18px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #5A6472;">Границы</div>
+      </div>
+      <h1 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 46px; line-height: 1.1; color: #14304F;">Чего в прототипе нет</h1>
+    </div>
+    <div style="font-size: 18px; color: #5A6472; text-align: right; line-height: 1.4;">Эффект не измерялся</div>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #DCE1E8; border-radius: 8px; padding: 12px 34px; display: flex; flex-direction: column;">
+    <div style="display: flex; gap: 20px; align-items: baseline; padding: 20px 0; border-bottom: 1px solid #ECEFF3;">
+      <div style="font-size: 17px; font-weight: 600; color: #B4BAC4; width: 30px; flex-shrink: 0;">01</div>
+      <div style="font-size: 25px; line-height: 1.3; color: #101828;">Нет production-входа, изоляции клиентских данных, сертификации расчётов — требования ТЗ §29–34 не покрыты</div>
+    </div>
+    <div style="display: flex; gap: 20px; align-items: baseline; padding: 20px 0; border-bottom: 1px solid #ECEFF3;">
+      <div style="font-size: 17px; font-weight: 600; color: #B4BAC4; width: 30px; flex-shrink: 0;">02</div>
+      <div style="font-size: 25px; line-height: 1.3; color: #101828;">Открытый переключатель ролей — приём показа, а не модель безопасности</div>
+    </div>
+    <div style="display: flex; gap: 20px; align-items: baseline; padding: 20px 0; border-bottom: 1px solid #ECEFF3;">
+      <div style="font-size: 17px; font-weight: 600; color: #B4BAC4; width: 30px; flex-shrink: 0;">03</div>
+      <div style="font-size: 25px; line-height: 1.3; color: #101828;">Локальный запуск и SQLite рассчитаны только на этот показ</div>
+    </div>
+    <div style="display: flex; gap: 20px; align-items: baseline; padding: 20px 0; border-bottom: 1px solid #ECEFF3;">
+      <div style="font-size: 17px; font-weight: 600; color: #B4BAC4; width: 30px; flex-shrink: 0;">04</div>
+      <div style="font-size: 25px; line-height: 1.3; color: #101828;">Данные полностью синтетические: БИН 000000000001, адреса example.invalid, нерабочие телефоны</div>
+    </div>
+    <div style="display: flex; gap: 20px; align-items: baseline; padding: 20px 0;">
+      <div style="font-size: 17px; font-weight: 600; color: #B4BAC4; width: 30px; flex-shrink: 0;">05</div>
+      <div style="font-size: 25px; line-height: 1.3; color: #101828;">НДС 12% и комиссия — учебные параметры, не утверждение о действующих налоговых правилах</div>
+    </div>
+  </div>
+
+  <div style="margin-top: auto; background: #14304F; border-radius: 8px; padding: 28px 36px; display: flex; align-items: center; justify-content: space-between; gap: 24px;">
+    <div style="font-family: 'Source Serif 4', Georgia, serif; font-size: 40px; font-weight: 600; color: #FFFFFF;">Дальше — живой показ</div>
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#7FD1CB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;" aria-hidden="true"><path d="M4 12h15"></path><path d="M13 5l7 7-7 7"></path></svg>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

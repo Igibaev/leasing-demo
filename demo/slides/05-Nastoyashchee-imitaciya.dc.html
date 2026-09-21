@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Что настоящее, а что имитация</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&amp;display=swap">
+<style>
+body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #F5F6F8; color: #101828; }
+a { color: #0F6E6B; } a:hover { color: #0A5250; }
+</style>
+</helmet>
+<div style="width: 1280px; height: 720px; box-sizing: border-box; background: #F5F6F8; padding: 52px 64px; display: flex; flex-direction: column; gap: 28px;">
+
+  <div style="display: flex; align-items: center; gap: 20px;">
+    <div style="width: 48px; height: 3px; background: #0F6E6B;"></div>
+    <div style="font-size: 18px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #5A6472;">Что настоящее, а что имитация</div>
+  </div>
+
+  <div style="display: flex; gap: 28px; flex-grow: 1;">
+
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #C7D9D7; border-radius: 8px; display: flex; flex-direction: column;">
+      <div style="background: #0F6E6B; color: #FFFFFF; padding: 20px 28px; border-radius: 7px 7px 0 0; display: flex; align-items: center; gap: 14px;">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><div style="font-size: 30px; font-weight: 600;">Настоящее в прототипе</div><div style="font-size: 16px; color: #BFE0DD;">ТЗ §13, 15, 16, 21, 22, 31</div></div>
+      </div>
+      <div style="padding: 26px 28px; display: flex; flex-direction: column; gap: 20px;">
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F6E6B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Последовательный маршрут согласования, запрет перескока</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F6E6B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Расчёт графика, аннуитет, IRR — точная decimal-арифметика</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F6E6B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Транзакционное создание договора, графика и предмета лизинга</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F6E6B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Распределение платежей по приоритету, защита от переплат и дублей</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F6E6B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Расчёт просрочки с учётом частичных оплат, журнал действий</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex-grow: 1; flex-basis: 0; background: #FDF6F5; border: 1px solid #E4C4C1; border-radius: 8px; display: flex; flex-direction: column;">
+      <div style="background: #A82A22; color: #FFFFFF; padding: 20px 28px; border-radius: 7px 7px 0 0; display: flex; align-items: center; gap: 14px;">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><div style="font-size: 30px; font-weight: 600;">Имитация</div><div style="font-size: 16px; color: #F0C9C5;">ТЗ §6, 8, 17, 28, 30</div></div>
+      </div>
+      <div style="padding: 26px 28px; display: flex; flex-direction: column; gap: 20px;">
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A82A22" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">AML / ПОД-ФТ проверки</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A82A22" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">ЭЦП — в продукте это НУЦ РК</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A82A22" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Банковская выписка — читается подготовленный CSV, банк не подключён</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A82A22" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Документооборот (DMS)</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A82A22" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Аутентификация и разграничение доступа</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="font-size: 18px; color: #5A6472;">Имитация — экран есть, внешней системы за ним нет. Ссылки даны на разделы ТЗ АИС «Лизинг» v1.0.</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
