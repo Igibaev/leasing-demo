@@ -2,10 +2,6 @@ import { calculateScoring, DEFAULT_SCORING_MODEL, evaluateStopFactors, checkLimi
 import Decimal from "decimal.js";
 import type { Application, Client } from "@prisma/client";
 
-export interface SponsorPlate extends Client {
-  financeJson: unknown;
-}
-
 export interface ScoringFacts {
   financialCondition: string;
   debtBurden: string;
@@ -25,7 +21,12 @@ export interface ScoringFacts {
 }
 
 export function factsFor(client: Client, appl: Application): ScoringFacts {
-  const finance = (client as unknown as { finance: Record<string, number> }).finance ?? {};
+  let finance: Record<string, number> = {};
+  try {
+    finance = JSON.parse(client.financeJson) as Record<string, number>;
+  } catch {
+    finance = {};
+  }
   const ebitdaMargin = finance.ebitdaMargin ?? 15;
   const debtEbitda = finance.debtEbitda ?? 2;
   const currentRatio = finance.currentRatio ?? 1.2;

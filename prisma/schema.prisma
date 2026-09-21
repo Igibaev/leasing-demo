@@ -49,6 +49,83 @@ model Client {
   createdAt        DateTime      @default(now())
   applications     Application[]
   contracts        Contract[]
+  relatedParties   ClientRelatedParty[]
+  documents        ClientDocument[]
+  financialPeriods FinancialPeriod[]
+  amlChecks        AmlCheck[]
+  ratingHistory    RiskRatingHistory[]
+}
+
+model ClientRelatedParty {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type      String
+  name      String
+  binIin    String?
+  ownership String?
+  isPep     Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model ClientDocument {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  category    String
+  name        String
+  number      String?
+  version     Int      @default(1)
+  status      String   @default("DRAFT")
+  mimeType    String   @default("application/pdf")
+  contentHash String
+  validUntil  String?
+  createdById String
+  createdAt   DateTime @default(now())
+  approvedAt  DateTime?
+}
+
+model FinancialPeriod {
+  id                String   @id @default(cuid())
+  clientId          String
+  client            Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  period            String
+  revenue           String
+  ebitda            String
+  netIncome         String
+  assets            String
+  equity            String
+  debt              String
+  cash              String
+  operatingCashFlow String
+  debtService       String
+  createdAt         DateTime @default(now())
+
+  @@unique([clientId, period])
+}
+
+model AmlCheck {
+  id             String   @id @default(cuid())
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  result         String
+  riskLevel      String
+  source         String
+  details        String
+  checkedById    String
+  checkedAt      DateTime @default(now())
+  nextReviewDate String
+}
+
+model RiskRatingHistory {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  rating    String
+  score     Int
+  reason    String
+  source    String
+  createdAt DateTime @default(now())
 }
 
 model Supplier {

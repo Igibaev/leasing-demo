@@ -21,7 +21,7 @@ export type Module = (typeof MODULES)[number];
 export type PermissionSet = Partial<Record<Action, boolean>>;
 export type PermissionMatrix = Partial<Record<Module, PermissionSet>>;
 
-const ALL = { view: true, create: true, edit: true, approve: true } satisfies PermissionSet;
+const ALL = { view: true, create: true, edit: true, approve: true, sign: true, crm: true } satisfies PermissionSet;
 const VIEW_ONLY = { view: true } satisfies PermissionSet;
 const INSPECT = { view: true, approve: true } satisfies PermissionSet;
 

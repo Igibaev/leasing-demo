@@ -5,13 +5,13 @@ import { can } from "@/lib/roles";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge, STATUS_LABEL, statusColor } from "@/components/ui/badge";
 import { Table, Td } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
 import { moneyKzt } from "@/lib/money";
 import { formatDate } from "@/lib/datetime";
 import { overdueForLines, BUCKET_LABEL } from "@/lib/overdue";
 import { getSystemDate } from "@/lib/audit";
 import { PaymentForm } from "@/components/payment-form";
 import { MockSignButton } from "@/components/mock-sign-button";
+import { createHash } from "crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
   const { id } = await params;
   const systemDate = await getSystemDate();
 
-  const contract = await prisma.contract.findUnique({
+  const [contract, signatureAudit] = await Promise.all([prisma.contract.findUnique({
     where: { id },
     include: {
       application: { include: { client: true } },
@@ -30,7 +30,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
       asset: { include: { insurance: true } },
       payments: { orderBy: { date: "desc" } },
     },
-  });
+  }), prisma.auditLog.findFirst({ where: { object: "contract", objectId: id, operation: "SIGN_ECP" }, orderBy: { at: "desc" } })]);
   if (!contract) notFound();
   if (!can(role.code, "contracts", "view")) return <div className="text-sm text-slate-500">Нет доступа.</div>;
   const activeSchedule = contract.paymentSchedules.find((schedule) => schedule.isActive);
@@ -41,6 +41,10 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
   const remainingPrincipal = lines
     .filter((line) => line.status === "OPEN" || line.status === "PARTIAL")
     .reduce((sum, line) => sum + Number(line.principal) - Number(line.paidTotal ?? 0) * Number(line.principal) / Math.max(Number(line.total), 1), 0);
+  const signature = signatureAudit?.newValue ? JSON.parse(signatureAudit.newValue) as { signer: string; certificate: string; certificateFingerprint: string; hash: string } : null;
+  const signedContent = JSON.stringify({ number: contract.number, applicationId: contract.applicationId, clientId: contract.clientId, amount: contract.amount, annualRate: contract.annualRate, termMonths: contract.termMonths, schedule: contract.scheduleJson });
+  const currentHash = `sha256:${createHash("sha256").update(signedContent).digest("hex")}`;
+  const signatureValid = signature?.hash === currentHash;
 
   return (
     <div className="space-y-6">
@@ -55,7 +59,6 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
             {contract.application.client.name} · {contract.application.product} · сумма {moneyKzt(contract.amount)} · {contract.termMonths} мес. · {contract.annualRate}% годовых · подписан {formatDate(contract.signDate)}
           </p>
         </div>
-        {contract.status === "ACTIVE" && can(role.code, "payments", "create") ? <Button>Отправить напоминание клиенту</Button> : null}
       </div>
 
       {overdue.dpd > 0 ? (
@@ -163,6 +166,14 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                   <CardHeader title="Электронная подпись" subtitle="мок: в продукте — НУЦ РК (GOST)" />
                   <CardBody>
                     <MockSignButton contractId={contract.id} />
+                  </CardBody>
+                </Card>
+              ) : null}
+              {signature && signatureAudit ? (
+                <Card className={signatureValid ? "border-emerald-200 bg-emerald-50/40" : "border-red-200 bg-red-50/40"}>
+                  <CardHeader title={signatureValid ? "Подпись проверена" : "Целостность подписи нарушена"} subtitle={formatDate(signatureAudit.at)} />
+                  <CardBody className={`space-y-1 break-all font-mono text-[10px] ${signatureValid ? "text-emerald-800" : "text-red-800"}`}>
+                    <div>Подписант: {signature.signer}</div><div>Сертификат: {signature.certificate}</div><div>Отпечаток: {signature.certificateFingerprint}</div><div>{signature.hash}</div>
                   </CardBody>
                 </Card>
               ) : null}
