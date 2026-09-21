@@ -30,6 +30,15 @@ try {
   page.on("console", msg => { if (["error", "warning", "info"].includes(msg.type())) console.error("CONSOLE", msg.text()); });
   page.on('pageerror', error => { errors.push(error.message); console.error('BROWSER ERROR', error.message); });
   page.on('response', response => { if (response.status() >= 500) errors.push(`${response.status()} ${response.url()}`); });
+  // A click only queues the navigation: wait for both the card URL and its
+  // heading before reading page.url() or taking a screenshot of the card.
+  async function openCard(link, pattern, heading) {
+    await link.click();
+    await page.waitForURL(url => pattern.test(url.pathname));
+    await heading.waitFor();
+    await page.waitForLoadState('networkidle');
+    return page.url();
+  }
   async function role(name) {
     const select = page.getByLabel('Демо-пользователь');
     const option = await select.locator('option').evaluateAll((items, name) => items.find(item => item.textContent.includes(name))?.value, name);
@@ -41,8 +50,11 @@ try {
   await page.goto(base);
   await role('Менеджер по продажам');
   await page.goto(`${base}/clients`);
-  await page.getByRole('link', { name: 'ТОО ДЕМО — Учебная логистика', exact: true }).click();
-  await page.getByRole('heading', { name: 'ТОО ДЕМО — Учебная логистика' }).waitFor();
+  await openCard(
+    page.getByRole('link', { name: 'ТОО ДЕМО — Учебная логистика', exact: true }),
+    /^\/clients\/[^/]+$/,
+    page.getByRole('heading', { name: 'ТОО ДЕМО — Учебная логистика' }),
+  );
   console.log('PASS client dossier opens');
   await page.goto(`${base}/applications/new`);
   await page.waitForLoadState("networkidle");
@@ -60,6 +72,8 @@ try {
   assert(await page.getByText('23.91%', { exact: true }).count() > 0, 'IRR must already be expressed as percent');
   await page.getByRole('button', { name: 'Отправить на рассмотрение' }).click();
   await page.getByText('Маршрут согласования', { exact: true }).waitFor();
+  await page.waitForLoadState('networkidle');
+  assert.equal(page.url(), applicationUrl, 'Submission stays on the application card');
   await page.screenshot({ path: `${artifacts}/01-application.png`, fullPage: true });
   console.log('PASS application creation and submission', applicationNumber);
   for (const name of ['Кредитный аналитик', 'Руководитель продаж', 'Юрист', 'Риск-менеджер', 'ПОД/ФТ']) {
@@ -82,16 +96,24 @@ try {
   await page.goto(`${base}/contracts/new`);
   const candidate = page.locator('li').filter({ hasText: applicationNumber });
   await candidate.getByRole('link', { name: 'Выбрать' }).click();
-  await page.getByRole('button', { name: 'Сформировать договор', exact: true }).click();
+  await page.waitForURL(url => url.searchParams.get('application') !== null);
+  const createContract = page.getByRole('button', { name: 'Сформировать договор', exact: true });
+  await createContract.waitFor();
+  await createContract.click();
   await page.waitForURL(url => /\/contracts\/[^/]+$/.test(url.pathname) && !url.pathname.endsWith("/new"));
-  await page.locator('h1').waitFor();
+  await page.getByRole('heading', { name: /ДЛ-/ }).first().waitFor();
+  await page.waitForLoadState('networkidle');
   assert.match(await page.locator('h1').innerText(), /ДЛ-/);
   await page.screenshot({ path: `${artifacts}/02-contract.png`, fullPage: true });
   console.log('PASS contract created through UI');
   await role('Бухгалтерия');
   await page.goto(`${base}/contracts`);
-  await page.getByRole('link', { name: 'ДЛ-DEMO-001', exact: true }).click();
-  const paymentUrl = page.url();
+  const paymentUrl = await openCard(
+    page.getByRole('link', { name: 'ДЛ-DEMO-001', exact: true }),
+    /^\/contracts\/[^/]+$/,
+    page.getByRole('heading', { name: 'ДЛ-DEMO-001' }).first(),
+  );
+  assert.match(new URL(paymentUrl).pathname, /^\/contracts\/[^/]+$/, 'Contract card URL must be captured after navigation');
   await page.getByPlaceholder('Сумма, ₸').fill('1000');
   await page.getByRole('button', { name: 'Зачислить', exact: true }).click();
   await page.getByRole('status').filter({ hasText: 'Платёж зачислен' }).waitFor();
@@ -102,6 +124,9 @@ try {
   await page.getByRole('button', { name: 'Импортировать демо-выписку' }).click();
   await page.getByText(/Импортировано: 0.*ранее учтено: 2/).waitFor();
   await page.goto(paymentUrl);
+  await page.getByRole('heading', { name: 'ДЛ-DEMO-001' }).first().waitFor();
+  await page.getByText(/График платежей · \d+ периодов/).first().waitFor();
+  await page.waitForLoadState('networkidle');
   await page.screenshot({ path: `${artifacts}/03-payments.png`, fullPage: true });
   console.log('PASS manual payment and idempotent CSV import');
   await role('Системный администратор');
@@ -110,7 +135,9 @@ try {
   await page.getByRole('button', { name: 'Симулировать время' }).click();
   await page.getByText("Системная дата обновлена.", { exact: true }).waitFor();
   await page.goto(paymentUrl);
+  await page.getByRole('heading', { name: 'ДЛ-DEMO-001' }).first().waitFor();
   await page.getByText(/Просрочка: DPD 61/).waitFor();
+  await page.waitForLoadState('networkidle');
   await page.screenshot({ path: `${artifacts}/04-overdue.png`, fullPage: true });
   console.log('PASS time simulation and partial-payment overdue');
   for (const path of ['/', '/clients', '/applications', '/contracts', '/payments', '/calculator', '/committee', '/overdue', '/monitoring', '/portfolio', '/audit', '/admin', '/account', '/search?q=DEMO']) {
