@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>АИС Лизинг — прототип рабочего места</title>
+<style>
+  :root {
+    --backdrop: #11161D;
+    --chrome: #8A93A0;
+    --navy: #14304F;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--backdrop);
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    color: #E6EDF5;
+    overflow: hidden;
+  }
+  #stage {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 1280px;
+    height: 720px;
+    transform-origin: center center;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  }
+  .slide { display: none; }
+  .slide.active { display: block; }
+  #bar {
+    position: fixed;
+    right: 20px;
+    bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    color: var(--chrome);
+  }
+  #bar button {
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 1px solid #333D4A;
+    border-radius: 6px;
+    min-width: 44px;
+    min-height: 44px;
+    cursor: pointer;
+  }
+  #bar button:hover, #bar button:focus-visible { color: #FFFFFF; border-color: #5A6472; }
+  #counter { min-width: 84px; text-align: center; font-variant-numeric: tabular-nums; }
+  #notes {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 38vh;
+    overflow: auto;
+    padding: 20px 28px 24px;
+    background: #182130;
+    border-top: 2px solid var(--navy);
+    font-size: 17px;
+    line-height: 1.5;
+    color: #D3DBE5;
+  }
+  #notes[hidden] { display: none; }
+  #notes h2 { margin: 0 0 8px; font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; color: #8A93A0; font-weight: 600; }
+  #hint { position: fixed; left: 20px; bottom: 20px; font-size: 13px; color: #4A5464; }
+  @media print {
+    @page { size: 1280px 720px; margin: 0; }
+    body { background: #FFFFFF; overflow: visible; }
+    #bar, #hint, #notes { display: none !important; }
+    #stage { position: static; width: auto; height: auto; transform: none !important; box-shadow: none; }
+    .slide { display: block !important; page-break-after: always; break-after: page; }
+    .slide:last-child { page-break-after: auto; break-after: auto; }
+  }
+</style>
+</head>
+<body>
+<main id="stage">
+<section class="slide active" aria-label="1 · Титул">
+<div style="width: 1280px; height: 720px; box-sizing: border-box; background: #14304F; color: #FFFFFF; padding: 72px 80px; display: flex; flex-direction: column; justify-content: space-between;">
+  <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+    <div style="font-size: 18px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #9FB6CE;">Внутренний показ прототипа</div>
+    <div style="font-size: 17px; font-weight: 500; color: #14304F; background: #7FD1CB; padding: 8px 16px; border-radius: 4px;">Прототип</div>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 24px;">
+    <h1 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 72px; line-height: 1.08; letter-spacing: -0.01em;">АИС Лизинг — прототип рабочего места</h1>
+    <div style="width: 120px; height: 4px; background: #7FD1CB;"></div>
+    <p style="margin: 0; font-size: 28px; line-height: 1.35; color: #C9D7E6; max-width: 820px;">Демонстрация процесса на синтетических данных</p>
+  </div>
+  <div style="display: flex; gap: 72px; align-items: flex-end; border-top: 1px solid #2C4A6C; padding-top: 28px;">
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-size: 15px; letter-spacing: 0.1em; text-transform: uppercase; color: #9FB6CE;">Дата</div>
+      <div style="font-size: 24px; font-weight: 500; color: #E6EDF5;">[ДАТА ПОКАЗА]</div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-size: 15px; letter-spacing: 0.1em; text-transform: uppercase; color: #9FB6CE;">Ведущий</div>
+      <div style="font-size: 24px; font-weight: 500; color: #E6EDF5;">[ИМЯ ВЕДУЩЕГО]</div>
+    </div>
+    <div style="flex-grow: 1; text-align: right; font-size: 17px; color: #9FB6CE;">Казахстан · тенге (₸)</div>
+  </div>
+</div>
+</section>
+<section class="slide" aria-label="2 · Проблема">
+<div style="width: 1280px; height: 720px; box-sizing: border-box; background: #F5F6F8; padding: 56px 64px; display: flex; flex-direction: column; gap: 32px;">
+  <div style="display: flex; align-items: center; gap: 20px;">
+    <div style="width: 48px; height: 3px; background: #0F6E6B;"></div>
+    <div style="font-size: 18px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #5A6472;">Проблема</div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 14px;">
+    <h1 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 56px; line-height: 1.1; letter-spacing: -0.01em; color: #14304F;">Сделка живёт в почте и таблицах</h1>
+    <p style="margin: 0; font-size: 24px; line-height: 1.35; color: #5A6472; max-width: 1000px;">Ответ «сколько клиент должен на сегодня» приходится собирать вручную.</p>
+  </div>
+
+  <div style="display: flex; gap: 24px; flex-grow: 1;">
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #DCE1E8; border-top: 3px solid #14304F; border-radius: 8px; padding: 28px 26px; display: flex; flex-direction: column; gap: 18px;">
+      <div style="font-size: 26px; line-height: 1.3; font-weight: 500; color: #101828;">Досье разорвано по папкам и письмам</div>
+      <div style="margin-top: auto; background: #F0F5F4; border-radius: 6px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0F6E6B;">Принцип ТЗ</div>
+        <div style="font-size: 19px; line-height: 1.3; color: #14304F;">Один клиент — одно досье</div>
+      </div>
+    </div>
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #DCE1E8; border-top: 3px solid #14304F; border-radius: 8px; padding: 28px 26px; display: flex; flex-direction: column; gap: 18px;">
+      <div style="font-size: 26px; line-height: 1.3; font-weight: 500; color: #101828;">Непонятно, у кого сделка сейчас</div>
+      <div style="margin-top: auto; background: #F0F5F4; border-radius: 6px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0F6E6B;">Принцип ТЗ</div>
+        <div style="font-size: 19px; line-height: 1.3; color: #14304F;">Одна сделка — один сквозной процесс</div>
+      </div>
+    </div>
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #DCE1E8; border-top: 3px solid #14304F; border-radius: 8px; padding: 28px 26px; display: flex; flex-direction: column; gap: 18px;">
+      <div style="font-size: 26px; line-height: 1.3; font-weight: 500; color: #101828;">Не видно основания принятого решения</div>
+      <div style="margin-top: auto; background: #F0F5F4; border-radius: 6px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0F6E6B;">Принцип ТЗ</div>
+        <div style="font-size: 19px; line-height: 1.3; color: #14304F;">Одно изменение — один аудиторский след</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="font-size: 17px; color: #5A6472;">Формулировки принципов — из ТЗ АИС «Лизинг», раздел 40 «Итоговая целевая модель».</div>
+</div>
+</section>
+<section class="slide" aria-label="3 · Что показываем">
+<div style="width: 1280px; height: 720px; box-sizing: border-box; background: #F5F6F8; padding: 56px 64px; display: flex; flex-direction: column; gap: 36px;">
+  <div style="display: flex; align-items: center; gap: 20px;">
+    <div style="width: 48px; height: 3px; background: #0F6E6B;"></div>
+    <div style="font-size: 18px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #5A6472;">Что показываем</div>
+  </div>
+  <h1 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 56px; line-height: 1.1; letter-spacing: -0.01em; color: #14304F;">Одна сделка — от расчёта до оплаты</h1>
+  <div style="display: flex; gap: 24px; flex-grow: 1;">
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #DCE1E8; border-radius: 8px; padding: 32px 28px; display: flex; flex-direction: column; gap: 18px;">
+      <div style="font-family: 'Source Serif 4', Georgia, serif; font-size: 46px; font-weight: 600; color: #0F6E6B; line-height: 1;">01</div>
+      <div style="font-size: 30px; font-weight: 600; line-height: 1.25; color: #14304F;">Досье и заявка</div>
+      <div style="margin-top: auto; border-top: 1px solid #E4E8ED; padding-top: 16px; font-size: 17px; line-height: 1.4; color: #5A6472;">ТЗ §5–7 · карточка клиента, электронное досье, заявка</div>
+    </div>
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #DCE1E8; border-radius: 8px; padding: 32px 28px; display: flex; flex-direction: column; gap: 18px;">
+      <div style="font-family: 'Source Serif 4', Georgia, serif; font-size: 46px; font-weight: 600; color: #0F6E6B; line-height: 1;">02</div>
+      <div style="font-size: 30px; font-weight: 600; line-height: 1.25; color: #14304F;">Согласование и договор</div>
+      <div style="margin-top: auto; border-top: 1px solid #E4E8ED; padding-top: 16px; font-size: 17px; line-height: 1.4; color: #5A6472;">ТЗ §13–16 · маршрут, комитет, калькулятор, договор</div>
+    </div>
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #DCE1E8; border-radius: 8px; padding: 32px 28px; display: flex; flex-direction: column; gap: 18px;">
+      <div style="font-family: 'Source Serif 4', Georgia, serif; font-size: 46px; font-weight: 600; color: #0F6E6B; line-height: 1;">03</div>
+      <div style="font-size: 30px; font-weight: 600; line-height: 1.25; color: #14304F;">Платёж и просрочка</div>
+      <div style="margin-top: auto; border-top: 1px solid #E4E8ED; padding-top: 16px; font-size: 17px; line-height: 1.4; color: #5A6472;">ТЗ §21–22 · разноска платежей, расчёт DPD</div>
+    </div>
+  </div>
+  <div style="font-size: 18px; color: #5A6472;">Показываем часть контура из ТЗ. Остальные модули в прототипе не затрагиваются.</div>
+</div>
+</section>
+<section class="slide" aria-label="4 · Схема процесса">
+<div style="width: 1280px; height: 720px; box-sizing: border-box; background: #F5F6F8; padding: 56px 64px; display: flex; flex-direction: column; gap: 28px;">
+
+  <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 32px;">
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: center; gap: 20px;">
+        <div style="width: 48px; height: 3px; background: #0F6E6B;"></div>
+        <div style="font-size: 18px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #5A6472;">Схема процесса</div>
+      </div>
+      <h1 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 46px; line-height: 1.1; color: #14304F;">Строго по очереди</h1>
+    </div>
+    <div style="background: #14304F; color: #FFFFFF; padding: 14px 20px; border-radius: 6px; font-size: 19px; font-weight: 500; white-space: nowrap;">Активен всегда ровно один шаг</div>
+  </div>
+
+  <div style="display: flex; align-items: stretch; gap: 8px;">
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #D5DAE2; border-radius: 8px; padding: 16px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-size: 15px; font-weight: 600; color: #8A93A0;">1</div>
+      <div style="font-size: 21px; font-weight: 600; line-height: 1.2; color: #14304F;">Заявка</div>
+    </div>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A93A0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="align-self: center; flex-shrink: 0;" aria-hidden="true"><path d="M5 12h13"></path><path d="M13 6l6 6-6 6"></path></svg>
+    <div style="flex-grow: 1.5; flex-basis: 0; background: #14304F; border: 1px solid #14304F; border-radius: 8px; padding: 16px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-size: 15px; font-weight: 600; color: #9FB6CE;">2</div>
+      <div style="font-size: 21px; font-weight: 600; line-height: 1.2; color: #FFFFFF;">5 последовательных согласований</div>
+    </div>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A93A0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="align-self: center; flex-shrink: 0;" aria-hidden="true"><path d="M5 12h13"></path><path d="M13 6l6 6-6 6"></path></svg>
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #D5DAE2; border-radius: 8px; padding: 16px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-size: 15px; font-weight: 600; color: #8A93A0;">3</div>
+      <div style="font-size: 21px; font-weight: 600; line-height: 1.2; color: #14304F;">Кредитный комитет <span style="color: #0F6E6B;">*</span></div>
+    </div>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A93A0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="align-self: center; flex-shrink: 0;" aria-hidden="true"><path d="M5 12h13"></path><path d="M13 6l6 6-6 6"></path></svg>
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #D5DAE2; border-radius: 8px; padding: 16px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-size: 15px; font-weight: 600; color: #8A93A0;">4</div>
+      <div style="font-size: 21px; font-weight: 600; line-height: 1.2; color: #14304F;">Договор и график</div>
+    </div>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A93A0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="align-self: center; flex-shrink: 0;" aria-hidden="true"><path d="M5 12h13"></path><path d="M13 6l6 6-6 6"></path></svg>
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #D5DAE2; border-radius: 8px; padding: 16px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-size: 15px; font-weight: 600; color: #8A93A0;">5</div>
+      <div style="font-size: 21px; font-weight: 600; line-height: 1.2; color: #14304F;">Платежи</div>
+    </div>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A93A0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="align-self: center; flex-shrink: 0;" aria-hidden="true"><path d="M5 12h13"></path><path d="M13 6l6 6-6 6"></path></svg>
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #E0C3C0; border-radius: 8px; padding: 16px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-size: 15px; font-weight: 600; color: #C08A85;">6</div>
+      <div style="font-size: 21px; font-weight: 600; line-height: 1.2; color: #A82A22;">Просрочка</div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; align-items: center; gap: 0;">
+    <div style="width: 2px; height: 22px; background: #14304F;"></div>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #D5DAE2; border-top: 3px solid #14304F; border-radius: 8px; padding: 26px 28px; display: flex; flex-direction: column; gap: 20px;">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 24px;">
+      <div style="font-size: 20px; font-weight: 600; color: #14304F;">Шаг 2 — маршрут согласования <span style="font-weight: 400; color: #8A93A0;">(упрощение примера из ТЗ §13)</span></div>
+      <div style="font-size: 19px; color: #5A6472;">Перескок запрещён · следующий открывается только после предыдущего</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <div style="flex-grow: 1; flex-basis: 0; background: #E9F4F3; border: 2px solid #0F6E6B; border-radius: 6px; padding: 14px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0F6E6B;">Сейчас</div>
+        <div style="font-size: 19px; font-weight: 600; line-height: 1.2; color: #101828;">Кредитный аналитик</div>
+      </div>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B4BAC4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;" aria-hidden="true"><path d="M5 12h13"></path><path d="M13 6l6 6-6 6"></path></svg>
+      <div style="flex-grow: 1; flex-basis: 0; background: #F5F6F8; border: 1px solid #DCE1E8; border-radius: 6px; padding: 14px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9AA2AD;">Ждёт</div>
+        <div style="font-size: 19px; font-weight: 600; line-height: 1.2; color: #5A6472;">Руководитель продаж</div>
+      </div>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B4BAC4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;" aria-hidden="true"><path d="M5 12h13"></path><path d="M13 6l6 6-6 6"></path></svg>
+      <div style="flex-grow: 1; flex-basis: 0; background: #F5F6F8; border: 1px solid #DCE1E8; border-radius: 6px; padding: 14px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9AA2AD;">Ждёт</div>
+        <div style="font-size: 19px; font-weight: 600; line-height: 1.2; color: #5A6472;">Юрист</div>
+      </div>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B4BAC4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;" aria-hidden="true"><path d="M5 12h13"></path><path d="M13 6l6 6-6 6"></path></svg>
+      <div style="flex-grow: 1; flex-basis: 0; background: #F5F6F8; border: 1px solid #DCE1E8; border-radius: 6px; padding: 14px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9AA2AD;">Ждёт</div>
+        <div style="font-size: 19px; font-weight: 600; line-height: 1.2; color: #5A6472;">Риск-менеджер</div>
+      </div>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B4BAC4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;" aria-hidden="true"><path d="M5 12h13"></path><path d="M13 6l6 6-6 6"></path></svg>
+      <div style="flex-grow: 1; flex-basis: 0; background: #F5F6F8; border: 1px solid #DCE1E8; border-radius: 6px; padding: 14px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9AA2AD;">Ждёт</div>
+        <div style="font-size: 19px; font-weight: 600; line-height: 1.2; color: #5A6472;">ПОД/ФТ</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: auto; display: flex; flex-direction: column; gap: 6px; font-size: 16px; line-height: 1.4; color: #5A6472;"><div><span style="color: #0F6E6B;">*</span> правило «2 из 3» — демонстрационное, реальный регламент не согласован.</div><div>Маршрут в прототипе задан в коде; настраиваемый маршрут из ТЗ §13 (FR-WF-002) не реализован.</div></div>
+</div>
+</section>
+<section class="slide" aria-label="5 · Настоящее и имитация">
+<div style="width: 1280px; height: 720px; box-sizing: border-box; background: #F5F6F8; padding: 52px 64px; display: flex; flex-direction: column; gap: 28px;">
+
+  <div style="display: flex; align-items: center; gap: 20px;">
+    <div style="width: 48px; height: 3px; background: #0F6E6B;"></div>
+    <div style="font-size: 18px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #5A6472;">Что настоящее, а что имитация</div>
+  </div>
+
+  <div style="display: flex; gap: 28px; flex-grow: 1;">
+
+    <div style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #C7D9D7; border-radius: 8px; display: flex; flex-direction: column;">
+      <div style="background: #0F6E6B; color: #FFFFFF; padding: 20px 28px; border-radius: 7px 7px 0 0; display: flex; align-items: center; gap: 14px;">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><div style="font-size: 30px; font-weight: 600;">Настоящее в прототипе</div><div style="font-size: 16px; color: #BFE0DD;">ТЗ §13, 15, 16, 21, 22, 31</div></div>
+      </div>
+      <div style="padding: 26px 28px; display: flex; flex-direction: column; gap: 20px;">
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F6E6B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Последовательный маршрут согласования, запрет перескока</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F6E6B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Расчёт графика, аннуитет, IRR — точная decimal-арифметика</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F6E6B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Транзакционное создание договора, графика и предмета лизинга</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F6E6B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Распределение платежей по приоритету, защита от переплат и дублей</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F6E6B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><path d="M4 12.5l5 5 11-11"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Расчёт просрочки с учётом частичных оплат, журнал действий</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex-grow: 1; flex-basis: 0; background: #FDF6F5; border: 1px solid #E4C4C1; border-radius: 8px; display: flex; flex-direction: column;">
+      <div style="background: #A82A22; color: #FFFFFF; padding: 20px 28px; border-radius: 7px 7px 0 0; display: flex; align-items: center; gap: 14px;">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><div style="font-size: 30px; font-weight: 600;">Имитация</div><div style="font-size: 16px; color: #F0C9C5;">ТЗ §6, 8, 17, 28, 30</div></div>
+      </div>
+      <div style="padding: 26px 28px; display: flex; flex-direction: column; gap: 20px;">
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A82A22" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">AML / ПОД-ФТ проверки</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A82A22" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">ЭЦП — в продукте это НУЦ РК</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A82A22" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Банковская выписка — читается подготовленный CSV, банк не подключён</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A82A22" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Документооборот (DMS)</div>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A82A22" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 3px;" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 18L18 6"></path></svg>
+          <div style="font-size: 21px; line-height: 1.35; color: #101828;">Аутентификация и разграничение доступа</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 32px;"><div style="font-size: 18px; color: #5A6472;">Имитация — экран есть, внешней системы за ним нет. Ссылки даны на разделы ТЗ АИС «Лизинг» v1.0.</div><div style="font-size: 22px; font-weight: 600; color: #14304F; white-space: nowrap;">Дальше — живой показ</div></div>
+</div>
+</section>
+</main>
+
+<div id="hint">← → слайды · N заметки · F во весь экран</div>
+
+<div id="bar">
+  <button type="button" id="prev" aria-label="Предыдущий слайд">←</button>
+  <span id="counter"></span>
+  <button type="button" id="next" aria-label="Следующий слайд">→</button>
+  <button type="button" id="toggleNotes" aria-label="Заметки докладчика">N</button>
+</div>
+
+<aside id="notes" hidden>
+  <h2 id="notesTitle"></h2>
+  <p id="notesBody" style="margin: 0;"></p>
+</aside>
+
+<script>
+  var NOTES = [{"title":"1 · Титул","note":"Заметки к слайду 1. Это прототип рабочего места сотрудника лизинговой компании, собранный на синтетических данных. Слайдов пять, они занимают пять минут, дальше мы уходим в само приложение. Цель встречи — показать процесс и честно обозначить, что в нём уже работает, а что нарисовано."},{"title":"2 · Проблема","note":"Заметки к слайду 2. Боли формулирую не от себя, а языком вашего ТЗ: раздел 40 задаёт три принципа — одно досье, один сквозной процесс, один аудиторский след. Сегодня каждому из них противостоит своя рутина: досье разорвано, владелец сделки неочевиден, основание решения не восстанавливается. Цифр сознательно не привожу — мы ничего не замеряли."},{"title":"3 · Что показываем","note":"Заметки к слайду 3. Показываю одну сделку целиком тремя сценариями и сразу говорю, каким разделам ТЗ они соответствуют: 5–7, 13–16, 21–22. Это часть контура, а не весь ТЗ: CRM, скоринг, лимиты, ковенанты, мониторинг, взыскание в прототип не входили. Подробности не выношу на слайд — всё видно вживую."},{"title":"4 · Схема процесса","note":"Заметки к слайду 4. Маршрут жёстко последовательный: пять согласований идут по очереди, активен ровно один шаг, перескочить нельзя — это ответ на требование ТЗ исключить проведение сделки в обход процедур. Важная оговорка: сам маршрут у нас задан в коде, а ТЗ требует настраивать его администратором без правки кода — этого в прототипе нет. Правило «2 из 3» на комитете тоже демонстрационное."},{"title":"5 · Настоящее и имитация","note":"Заметки к слайду 5. Это главный слайд: слева то, что реально считается и проверяется в коде, справа — экраны без внешней системы за ними; под заголовками указаны разделы ТЗ. Если спросят, работает ли это с банком — ответ: нет, это имитация, реальная интеграция в объём прототипа не входила. Ту же рамку держим и на демо: где я нажимаю на имитацию, я об этом говорю вслух. Это последний слайд: сразу после него говорю про границы вслух — не production, доступ открыт, запуск локальный, данные синтетические, параметры учебные — и перехожу к живому показу."}];
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var stage = document.getElementById('stage');
+  var counter = document.getElementById('counter');
+  var notes = document.getElementById('notes');
+  var notesTitle = document.getElementById('notesTitle');
+  var notesBody = document.getElementById('notesBody');
+  var i = 0;
+
+  function fit() {
+    var padX = 48;
+    var padY = 104;
+    var avail = window.innerHeight - (notes.hidden ? 0 : notes.offsetHeight);
+    var scale = Math.min((window.innerWidth - padX) / 1280, (avail - padY) / 720);
+    stage.style.top = (avail / 2) + 'px';
+    stage.style.transform = 'translate(-50%, -50%) scale(' + Math.max(scale, 0.1) + ')';
+  }
+
+  function show(n) {
+    i = (n + slides.length) % slides.length;
+    slides.forEach(function (s, k) { s.classList.toggle('active', k === i); });
+    counter.textContent = (i + 1) + ' / ' + slides.length;
+    notesTitle.textContent = NOTES[i].title;
+    notesBody.textContent = NOTES[i].note;
+    fit();
+  }
+
+  document.getElementById('prev').addEventListener('click', function () { show(i - 1); });
+  document.getElementById('next').addEventListener('click', function () { show(i + 1); });
+  document.getElementById('toggleNotes').addEventListener('click', function () {
+    notes.hidden = !notes.hidden;
+    fit();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { show(i + 1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { show(i - 1); e.preventDefault(); }
+    else if (e.key === 'Home') { show(0); }
+    else if (e.key === 'End') { show(slides.length - 1); }
+    else if (e.key === 'n' || e.key === 'N' || e.key === 'т' || e.key === 'Т') { notes.hidden = !notes.hidden; fit(); }
+    else if (e.key === 'f' || e.key === 'F' || e.key === 'а' || e.key === 'А') {
+      if (document.fullscreenElement) { document.exitFullscreen(); } else { document.documentElement.requestFullscreen(); }
+    }
+  });
+
+  window.addEventListener('resize', fit);
+  show(0);
+</script>
+</body>
+</html>
