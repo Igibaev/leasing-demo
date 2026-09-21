@@ -4,6 +4,7 @@ import { dateParam, addMonths, addDays } from "../lib/datetime";
 import { calculateScoring, DEFAULT_SCORING_MODEL } from "../lib/rules";
 import { factsFor } from "../lib/scoring";
 import { ALL_ROLES } from "../lib/roles";
+import { createHash } from "crypto";
 
 const prisma = new PrismaClient();
 
@@ -271,7 +272,7 @@ async function main() {
         ewsReason: "",
         financeJson: JSON.stringify(finance),
       },
-      select: { id: true },
+      select: { id: true, ewsColor: true },
     });
     clientIds.push(client.id);
     const rating = client.ewsColor === "RED" ? "F" : client.ewsColor === "ORANGE" ? "E" : intBetween(0, 2) === 0 ? "C" : "B";
@@ -294,16 +295,43 @@ async function main() {
     });
   }
 
+  for (const [index, client] of clients.entries()) {
+    const directorName = ["Айгерим Садыкова", "Ерлан Касымов", "Данияр Омаров", "Алия Жумабаева"][index % 4]!;
+    await prisma.clientRelatedParty.createMany({ data: [
+      { clientId: client.id, type: "DIRECTOR", name: directorName, binIin: kzBin(), isPep: index === 7 },
+      { clientId: client.id, type: "BENEFICIAL_OWNER", name: index % 2 ? "Марат Нурсеитов" : "Сауле Ахметова", binIin: kzBin(), ownership: index % 3 === 0 ? "100%" : "51%" },
+    ] });
+    const categories = ["CORPORATE", "FINANCIAL", "APPLICATION"];
+    for (const [docIndex, category] of categories.entries()) {
+      const name = docIndex === 0 ? "Устав и справка о регистрации" : docIndex === 1 ? "Финансовая отчётность" : "Анкета клиента";
+      const createdAt = addDays(today, -(30 + index + docIndex));
+      await prisma.clientDocument.create({ data: { clientId: client.id, category, name, number: `DOC-${index + 1}-${docIndex + 1}`, version: 1, status: docIndex === 2 ? "DRAFT" : "APPROVED", contentHash: createHash("sha256").update(`${client.id}:${category}:${name}:1`).digest("hex"), validUntil: docIndex === 0 ? dateParam(addMonths(today, index % 4 === 0 ? 1 : 18)) : null, createdById: userFor("ROLE-01"), createdAt, approvedAt: docIndex === 2 ? null : addDays(createdAt, 1) } });
+    }
+    for (let yearOffset = 2; yearOffset >= 0; yearOffset -= 1) {
+      const growth = 1 - yearOffset * 0.09;
+      const revenue = Math.round(client.finance.revenue * growth);
+      const ebitda = Math.round(client.finance.ebitda * growth);
+      await prisma.financialPeriod.create({ data: { clientId: client.id, period: String(today.getUTCFullYear() - yearOffset), revenue: String(revenue), ebitda: String(ebitda), netIncome: String(Math.round(client.finance.netIncome * growth)), assets: String(Math.round(client.finance.assets * growth)), equity: String(Math.round(client.finance.equity * growth)), debt: String(Math.round(client.finance.debt * (1 + yearOffset * 0.05))), cash: String(Math.round(client.finance.cash * growth)), operatingCashFlow: String(Math.round(ebitda * 0.7)), debtService: String(Math.round(client.finance.debt / 5)) } });
+    }
+    await prisma.amlCheck.create({ data: { clientId: client.id, result: index === 7 ? "REVIEW_REQUIRED" : "CLEAR", riskLevel: index === 7 || client.ewsColor === "RED" ? "HIGH" : "LOW", source: "DEMO_KZ_AML", details: index === 7 ? "PEP-признак у руководителя" : "Совпадений не найдено", checkedById: userFor("ROLE-07"), checkedAt: addDays(today, -intBetween(5, 120)), nextReviewDate: dateParam(addMonths(today, index === 7 ? 12 : 36)) } });
+    await prisma.riskRatingHistory.createMany({ data: [
+      { clientId: client.id, rating: client.riskRating === "F" ? "E" : "C", score: client.riskRating === "F" ? 35 : 66, reason: "Первичный автоматический расчёт", source: "ALGORITHM", createdAt: addDays(today, -180) },
+      { clientId: client.id, rating: client.riskRating, score: client.riskRating === "B" ? 78 : client.riskRating === "C" ? 65 : client.riskRating === "E" ? 42 : 25, reason: "Плановый пересчёт по финансовой отчётности", source: "ALGORITHM", createdAt: addDays(today, -30) },
+    ] });
+  }
+
   const statusesForDemo: { status: string; count: number }[] = [
-    { status: "DRAFT", count: 3 },
-    { status: "REGISTERED", count: 2 },
+    { status: "DRAFT", count: 2 },
+    { status: "REGISTERED", count: 3 },
+    { status: "DOCUMENTS", count: 3 },
     { status: "ANALYSIS", count: 4 },
     { status: "RISK", count: 3 },
-    { status: "APPROVAL", count: 2 },
-    { status: "COMMITTEE", count: 2 },
-    { status: "APPROVED", count: 8 },
+    { status: "APPROVAL", count: 3 },
+    { status: "COMMITTEE", count: 3 },
+    { status: "APPROVED", count: 22 },
     { status: "REJECTED", count: 3 },
-    { status: "CONTRACT", count: 4 },
+    { status: "CONTRACT", count: 8 },
+    { status: "FUNDED", count: 5 },
   ];
 
   interface AppSeed {
@@ -349,7 +377,7 @@ async function main() {
         firstPaymentDate: dateParam(addMonths(new Date(today.getFullYear() - 1, intBetween(0, 11), 1), 1)),
         scheduleType: "ANNUITY" as const,
       };
-      const schedule = ["APPROVED", "REJECTED", "CONTRACT"].includes(status)
+      const schedule = ["APPROVED", "REJECTED", "CONTRACT", "FUNDED"].includes(status)
         ? calculateSchedule(scheduleInput)
         : null;
       const appl = await prisma.application.create({
@@ -454,7 +482,7 @@ async function main() {
   }
 
   const approvedApps = apps.filter((app) => ["APPROVED", "CONTRACT", "FUNDED"].includes(app.status));
-  const toFund = approvedApps.slice(0, 15);
+  const toFund = approvedApps.slice(0, 35);
   const contractSeeds: ContractSeed[] = [];
   for (let index = 0; index < toFund.length; index += 1) {
     const app = toFund[index]!;

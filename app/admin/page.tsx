@@ -52,7 +52,7 @@ export default async function AdminPage() {
           <Table headers={["Код", "Название", "Модулей"]}>
             {roles.map((item) => (
               <tr key={item.id}>
-                <Td className="font-mono text-xs">{item.code}</Td>
+                <Td className="font-mono text-xs">{item.roleCode}</Td>
                 <Td className="text-xs">{item.name}</Td>
                 <Td className="text-xs">—</Td>
               </tr>

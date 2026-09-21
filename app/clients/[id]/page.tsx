@@ -9,12 +9,16 @@ import { Table, Td } from "@/components/ui/table";
 import { formatDate } from "@/lib/datetime";
 import { moneyKzt } from "@/lib/money";
 import { calculateRatios, DEFAULT_RATIOS } from "@/lib/rules";
+import { AddDossierDocument, AmlCheckButton } from "@/components/client-dossier-actions";
 
 export const dynamic = "force-dynamic";
 
 const TABS = [
   { key: "overview", label: "Общее" },
-  { key: "finance", label: "Финансы и рейтинг" },
+  { key: "related", label: "Связанные лица" },
+  { key: "dossier", label: "Досье" },
+  { key: "finance", label: "Финансы" },
+  { key: "rating", label: "Рейтинг" },
   { key: "applications", label: "Заявки" },
   { key: "contracts", label: "Договоры" },
   { key: "ews", label: "EWS и ПОД/ФТ" },
@@ -30,6 +34,11 @@ export default async function ClientDetailPage({ params, searchParams }: { param
     include: {
       applications: { orderBy: { createdAt: "desc" }, include: { contract: true } },
       contracts: { include: { paymentSchedules: { where: { isActive: true }, include: { lines: true } }, asset: { include: { insurance: true } } } },
+      relatedParties: { orderBy: { createdAt: "asc" } },
+      documents: { orderBy: { createdAt: "desc" } },
+      financialPeriods: { orderBy: { period: "desc" } },
+      amlChecks: { orderBy: { checkedAt: "desc" } },
+      ratingHistory: { orderBy: { createdAt: "desc" } },
     },
   });
   if (!client) notFound();
@@ -97,8 +106,12 @@ export default async function ClientDetailPage({ params, searchParams }: { param
         </Card>
       ) : null}
 
+      {tab === "related" ? <Card><CardHeader title={`Связанные лица · ${client.relatedParties.length}`} subtitle="Руководители, учредители и бенефициарные собственники" /><Table headers={["Тип", "ФИО / наименование", "ИИН/БИН", "Доля", "PEP"]}>{client.relatedParties.map((party) => <tr key={party.id}><Td>{party.type}</Td><Td className="font-medium">{party.name}</Td><Td className="font-mono text-xs">{party.binIin ?? "—"}</Td><Td>{party.ownership ?? "—"}</Td><Td>{party.isPep ? <Badge variant="red">Да</Badge> : <Badge variant="green">Нет</Badge>}</Td></tr>)}</Table></Card> : null}
+
+      {tab === "dossier" ? <div className="space-y-4"><Card><CardHeader title="Добавить документ в электронное досье" subtitle="Мок-файл получает SHA-256; операция фиксируется в аудите" /><CardBody><AddDossierDocument clientId={client.id} /></CardBody></Card><Card><CardHeader title={`Документы · ${client.documents.length}`} /><Table headers={["Категория", "Документ", "Версия", "Статус", "Действует до", "SHA-256"]}>{client.documents.map((document) => <tr key={document.id}><Td>{document.category}</Td><Td className="font-medium">{document.name}</Td><Td>v{document.version}</Td><Td><Badge variant={document.status === "APPROVED" ? "green" : "amber"}>{document.status}</Badge></Td><Td>{document.validUntil ? formatDate(document.validUntil) : "—"}</Td><Td className="max-w-40 truncate font-mono text-[10px]">{document.contentHash}</Td></tr>)}</Table></Card></div> : null}
+
       {tab === "finance" ? (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="space-y-4"><Card><CardHeader title="Финансовая отчётность · 3 периода" subtitle="Сравнительная динамика на детерминированных моковых данных" /><Table headers={["Период", "Выручка", "EBITDA", "Чистая прибыль", "Активы", "Капитал", "Долг"]}>{client.financialPeriods.map((period) => <tr key={period.id}><Td className="font-semibold">{period.period}</Td><Td>{moneyKzt(period.revenue)}</Td><Td>{moneyKzt(period.ebitda)}</Td><Td>{moneyKzt(period.netIncome)}</Td><Td>{moneyKzt(period.assets)}</Td><Td>{moneyKzt(period.equity)}</Td><Td>{moneyKzt(period.debt)}</Td></tr>)}</Table></Card><div className="grid gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader title="Финансовая отчётность" subtitle="условный период · коэффициенты из безопасного интерпретатора (без eval)" />
             <CardBody className="text-sm">
@@ -123,8 +136,10 @@ export default async function ClientDetailPage({ params, searchParams }: { param
               ))}
             </Table>
           </Card>
-        </div>
+        </div></div>
       ) : null}
+
+      {tab === "rating" ? <div className="grid gap-4 lg:grid-cols-2"><Card><CardHeader title="Текущий риск-профиль" /><CardBody className="space-y-2"><div className="text-4xl font-bold text-slate-900">{client.riskRating ?? "—"}</div><p className="text-sm text-slate-500">Рейтинг не перезаписывает историю: каждый автоматический или экспертный пересчёт сохраняется отдельно.</p></CardBody></Card><Card><CardHeader title="История рейтинга" /><Table headers={["Дата", "Рейтинг", "Балл", "Причина", "Источник"]}>{client.ratingHistory.map((entry) => <tr key={entry.id}><Td>{formatDate(entry.createdAt)}</Td><Td><Badge variant="outline">{entry.rating}</Badge></Td><Td>{entry.score}</Td><Td className="text-xs">{entry.reason}</Td><Td className="text-xs">{entry.source}</Td></tr>)}</Table></Card></div> : null}
 
       {tab === "applications" || !tab ? (
         <Card>
@@ -167,14 +182,14 @@ export default async function ClientDetailPage({ params, searchParams }: { param
       ) : null}
 
       {tab === "ews" ? (
-        <Card>
+        <div className="space-y-4"><Card>
           <CardHeader title="EWS и мониторинг клиента" />
           <CardBody className="space-y-3 text-sm">
             <div>Цвет EWS: <Badge variant={client.ewsColor === "GREEN" ? "green" : client.ewsColor === "RED" ? "red" : "amber"}>{client.ewsColor}</Badge> {client.ewsReason ? <span className="text-xs text-slate-500">— {client.ewsReason}</span> : null}</div>
             <div className="text-xs text-slate-500">Рейтинг автоматически пересчитывается на каждом этапе заявки и пишется в журнал аудита. История не затирается.</div>
             <div className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">Красный цвет EWS — жёсткий стоп-фактор: новые сделки блокируются до выяснения.</div>
           </CardBody>
-        </Card>
+        </Card><Card><CardHeader title="История проверок ПОД/ФТ" action={["ROLE-07", "ROLE-17"].includes(role.code) ? <AmlCheckButton key="aml" clientId={client.id} /> : undefined} /><Table headers={["Дата", "Результат", "Риск", "Источник", "Следующая проверка", "Детали"]}>{client.amlChecks.map((check) => <tr key={check.id}><Td>{formatDate(check.checkedAt)}</Td><Td><Badge variant={check.result === "CLEAR" ? "green" : "amber"}>{check.result}</Badge></Td><Td><Badge variant={check.riskLevel === "HIGH" ? "red" : "green"}>{check.riskLevel}</Badge></Td><Td>{check.source}</Td><Td>{formatDate(check.nextReviewDate)}</Td><Td className="text-xs">{check.details}</Td></tr>)}</Table></Card></div>
       ) : null}
     </div>
   );

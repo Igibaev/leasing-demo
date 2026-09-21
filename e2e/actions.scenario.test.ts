@@ -33,6 +33,8 @@ import {
   voteAction,
   signContractMockAction,
   createPaymentAction,
+  createMockDocumentAction,
+  runAmlCheckAction,
 } from "@/app/actions";
 
 async function run<T>(roleCode: string, fn: () => Promise<T>): Promise<T> {
@@ -148,8 +150,12 @@ describe("server actions: полный клиентский сценарий", (
     expect(bankPayments.length).toBeGreaterThan(0);
 
     await run("ROLE-09", () => signContractMockAction(createdContract.id));
-    const signedAudit = await prisma.auditLog.count({ where: { objectId: createdContract.id, operation: "SIGN_ECP" } });
-    expect(signedAudit).toBe(1);
+    const signedAudit = await prisma.auditLog.findFirstOrThrow({ where: { objectId: createdContract.id, operation: "SIGN_ECP" } });
+    const signature = JSON.parse(signedAudit.newValue || "{}") as { hash: string; certificateFingerprint: string };
+    expect(signature.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(signature.certificateFingerprint).toMatch(/^([A-F0-9]{2}:){31}[A-F0-9]{2}$/);
+    const forbiddenSignature = await run("ROLE-11", () => signContractMockAction(createdContract.id));
+    expect(forbiddenSignature.error).toContain("Нет права");
 
     const before = await prisma.config.findUniqueOrThrow({ where: { id: "system" } });
     const simulated = await run("ROLE-17", () => simulateTimeAction(90));
@@ -192,5 +198,20 @@ describe("server actions: полный клиентский сценарий", (
     state.cookie = `${other.id}:ROLE-08`;
     const wrongRole = await decideStepAction(app.id, step.id, "APPROVE", "");
     expect(String(wrongRole.error)).toContain("принимает роль");
+  });
+
+  it("электронное досье и историческая проверка ПОД/ФТ", async () => {
+    const client = await prisma.client.findFirstOrThrow({ include: { documents: true, amlChecks: true } });
+    const documentResult = await run("ROLE-01", () => createMockDocumentAction(null, form({ clientId: client.id, category: "LEGAL", name: "Юридическое заключение", validUntil: "2027-12-31" })));
+    expect(documentResult.ok).toBe(true);
+    const document = await prisma.clientDocument.findFirstOrThrow({ where: { clientId: client.id, name: "Юридическое заключение" } });
+    expect(document.contentHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(await prisma.auditLog.count({ where: { objectId: document.id, operation: "CREATE" } })).toBe(1);
+
+    const denied = await run("ROLE-01", () => runAmlCheckAction(client.id));
+    expect(denied.error).toContain("уполномоченная роль");
+    const checked = await run("ROLE-07", () => runAmlCheckAction(client.id));
+    expect(checked.ok).toBe(true);
+    expect(await prisma.amlCheck.count({ where: { clientId: client.id } })).toBe(client.amlChecks.length + 1);
   });
 });

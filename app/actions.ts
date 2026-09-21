@@ -16,6 +16,7 @@ import Decimal from "decimal.js";
 import { addDays } from "@/lib/datetime";
 import { readFileSync } from "fs";
 import path from "path";
+import { createHash } from "crypto";
 
 function zodError(error: z.ZodError): string {
   return error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
@@ -80,6 +81,46 @@ export async function createClientAction(_prev: unknown, formData: FormData) {
   await prisma.client.update({ where: { id: client.id }, data: { ewsColor: "GREEN", riskRating: "C" } });
   revalidatePath("/clients");
   redirect(`/clients/${client.id}`);
+}
+
+const mockDocumentSchema = z.object({
+  clientId: z.string().min(1),
+  category: z.enum(["APPLICATION", "CORPORATE", "FINANCIAL", "LEGAL", "DECISION", "CONTRACT", "INSURANCE", "OTHER"]),
+  name: z.string().trim().min(3).max(120),
+  validUntil: z.string().optional(),
+});
+
+export async function createMockDocumentAction(_prev: unknown, formData: FormData) {
+  const role = await requireRole();
+  const user = await requireUser();
+  if (!can(role.code, "clients", "edit")) return { error: "Нет права изменять досье клиента" };
+  const parsed = mockDocumentSchema.safeParse({ clientId: formData.get("clientId"), category: formData.get("category"), name: formData.get("name"), validUntil: formData.get("validUntil") || undefined });
+  if (!parsed.success) return { error: zodError(parsed.error) };
+  const client = await prisma.client.findUnique({ where: { id: parsed.data.clientId }, select: { id: true } });
+  if (!client) return { error: "Клиент не найден" };
+  const createdAt = new Date();
+  const contentHash = createHash("sha256").update(JSON.stringify({ ...parsed.data, createdAt: createdAt.toISOString(), createdById: user.id })).digest("hex");
+  const document = await prisma.clientDocument.create({ data: { ...parsed.data, validUntil: parsed.data.validUntil || null, contentHash, createdById: user.id, createdAt } });
+  await writeAudit({ userId: user.id, roleCode: role.code, object: "client_document", objectId: document.id, operation: "CREATE", newValue: JSON.stringify({ clientId: client.id, category: document.category, name: document.name, hash: contentHash }) });
+  revalidatePath(`/clients/${client.id}`);
+  return { ok: true };
+}
+
+export async function runAmlCheckAction(clientId: string) {
+  const role = await requireRole();
+  const user = await requireUser();
+  if (!["ROLE-07", "ROLE-17"].includes(role.code)) return { error: "Проверку ПОД/ФТ выполняет только уполномоченная роль" };
+  const client = await prisma.client.findUnique({ where: { id: clientId }, include: { relatedParties: true } });
+  if (!client) return { error: "Клиент не найден" };
+  const hasPep = client.relatedParties.some((party) => party.isPep);
+  const result = hasPep ? "REVIEW_REQUIRED" : "CLEAR";
+  const riskLevel = hasPep ? "HIGH" : client.ewsColor === "RED" ? "HIGH" : "LOW";
+  const checkedAt = new Date();
+  const nextReviewDate = new Date(Date.UTC(checkedAt.getUTCFullYear() + (riskLevel === "HIGH" ? 1 : 3), checkedAt.getUTCMonth(), checkedAt.getUTCDate())).toISOString().slice(0, 10);
+  const check = await prisma.amlCheck.create({ data: { clientId, result, riskLevel, source: "DEMO_KZ_AML", details: hasPep ? "Обнаружен PEP-признак у связанного лица; требуется ручная проверка" : "Совпадений в демонстрационных перечнях не найдено", checkedById: user.id, checkedAt, nextReviewDate } });
+  await writeAudit({ userId: user.id, roleCode: role.code, object: "aml_check", objectId: check.id, operation: "CHECK", newValue: JSON.stringify({ clientId, result, riskLevel, nextReviewDate }) });
+  revalidatePath(`/clients/${clientId}`);
+  return { ok: true };
 }
 
 const applicationSchema = z.object({
@@ -291,7 +332,7 @@ export async function createContractAction(applicationId: string) {
       status: "ACTIVE",
       scheduleJson: JSON.stringify(schedule),
     },
-    select: { id: true },
+    select: { id: true, amount: true },
   });
   const version = await prisma.paymentSchedule.create({ data: { contractId: contract.id, version: 1, isActive: true, reason: "Первичный график" }, select: { id: true } });
   for (const line of schedule) {
@@ -406,8 +447,12 @@ export async function signContractMockAction(contractId: string) {
   const user = await requireUser();
   const contract = await prisma.contract.findUnique({ where: { id: contractId } });
   if (!contract) return { error: "Договор не найден" };
-  const fakeHash = `sha256: ${Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`;
-  await writeAudit({ userId: user.id, roleCode: role.code, object: "contract", objectId: contractId, operation: "SIGN_ECP", newValue: JSON.stringify({ signedAt: new Date().toISOString(), signer: user.name, role: role.name, hash: fakeHash }) });
+  if (!can(role.code, "contracts", "sign")) return { error: "Нет права подписывать договор" };
+  const signedAt = new Date().toISOString();
+  const content = JSON.stringify({ number: contract.number, applicationId: contract.applicationId, clientId: contract.clientId, amount: contract.amount, annualRate: contract.annualRate, termMonths: contract.termMonths, schedule: contract.scheduleJson });
+  const hash = `sha256:${createHash("sha256").update(content).digest("hex")}`;
+  const certificateFingerprint = createHash("sha256").update(`DEMO-NUC-RK:${user.id}`).digest("hex").match(/.{1,2}/g)?.join(":").toUpperCase() ?? "";
+  await writeAudit({ userId: user.id, roleCode: role.code, object: "contract", objectId: contractId, operation: "SIGN_ECP", newValue: JSON.stringify({ signedAt, signer: user.name, role: role.name, certificate: "НУЦ РК DEMO RSA", certificateFingerprint, hash }) });
   await prisma.notification.create({ data: { userId: user.id, channel: "INAPP", subject: "ЭЦП подписана", body: `${contract.number}: мок-подпись фиксирована (SHA-256)` } });
   revalidatePath(`/contracts/${contractId}`);
   return { ok: true };
